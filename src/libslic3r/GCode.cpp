@@ -1368,7 +1368,9 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
 
     // Write end commands to file.
     file.write(this->retract_and_wipe());
-    file.write(m_writer.set_fan(0));
+    file.write(m_writer.set_fan(0));    //MJD - Default: M107
+
+    file.writeln(std::string("; here are some PnP commands that I generated algorithmically"));
 
     // adds tag for processor
     file.write_format(";%s%s\n", GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Role).c_str(), gcode_extrusion_role_to_string(GCodeExtrusionRole::Custom).c_str());

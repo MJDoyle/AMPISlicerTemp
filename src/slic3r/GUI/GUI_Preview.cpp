@@ -964,6 +964,7 @@ void Preview::load_print_as_fff(bool keep_z_range)
         if (gcode_preview_data_valid) {
             // Load the real G-code preview.
             m_canvas->load_gcode_preview(*m_gcode_result, tool_colors, color_print_colors);
+
             // the view type may have been changed by the call m_canvas->load_gcode_preview()
             gcode_view_type = m_canvas->get_gcode_view_type();
             zs = m_canvas->get_gcode_layers_zs();

@@ -5115,6 +5115,8 @@ bool GLCanvas3D::_init_main_toolbar()
     if (!m_main_toolbar.add_item(item))
         return false;
 
+
+
     if (!m_main_toolbar.add_separator())
         return false;
 /*
@@ -5130,6 +5132,8 @@ bool GLCanvas3D::_init_main_toolbar()
     if (!m_main_toolbar.add_item(item))
         return false;
 */
+
+
     if (!m_main_toolbar.add_separator())
         return false;
 
@@ -5152,6 +5156,29 @@ bool GLCanvas3D::_init_main_toolbar()
     item.left.render_callback   = GLToolbarItem::Default_Render_Callback;
     if (!m_main_toolbar.add_item(item))
         return false;
+
+
+    //MJD START
+
+    item.name = "customMJD";
+    item.icon_filename = "0custom.svg";
+    item.tooltip = _u8L("Split to objects and arrange");
+    item.sprite_id = sprite_id++;
+    item.left.action_callback = [this]() {
+                                            if (m_canvas != nullptr) 
+                                            {
+                                                wxPostEvent(m_canvas, SimpleEvent(EVT_GLTOOLBAR_SPLIT_OBJECTS));
+                                                wxPostEvent(m_canvas, SimpleEvent(EVT_GLTOOLBAR_ARRANGE));
+                                            }
+                                        };
+    item.enabling_callback = []()->bool { return wxGetApp().plater()->can_delete(); };
+    if (!m_main_toolbar.add_item(item))
+        return false;
+
+    //MJD END
+
+
+
 
     if (!m_main_toolbar.generate_icons_texture())
         return false;
