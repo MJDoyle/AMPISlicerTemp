@@ -448,6 +448,13 @@ std::vector<NormalExtrusions> get_normal_extrusions(
         result.emplace_back();
         result.back().instance_offset = offset;
 
+        //MJD START
+
+        //printf("\noffset\n");                       //This IS not the offset wrt to bed
+        //printf("%d, %d\n", offset.x(), offset.y());
+
+        //MJD END
+
         if (layers[instance.object_layer_to_print_id].support_layer != nullptr) {
             result.back().support_extrusions = get_support_extrusions(
                 extruder_id,

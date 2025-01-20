@@ -1735,6 +1735,16 @@ void TabPrint::build()
         optgroup->append_single_option_line(option);
 
         build_preset_description_line(optgroup.get());
+
+    //MJD START
+
+    page = add_options_page(L("Assembly"), "wrench");
+        optgroup = page->new_optgroup(L("Assembly planning"));
+        optgroup->append_single_option_line("enable_assembly");
+    
+    //MJD END
+
+
 }
 
 void TabPrint::update_description_lines()

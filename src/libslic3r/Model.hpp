@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 #include <optional>
+#include <iostream>
 
 namespace cereal {
 	class BinaryInputArchive;
@@ -355,6 +356,9 @@ public:
     // Whether or not this object is printable
     bool                    printable { true };
 
+    //Is this an internal or external volume. NOTE: this is only set temporarily during .3mf load          //MJD
+    bool                    internal { true };      //MJD
+
     // This vector holds position of selected support points for SLA. The data are
     // saved in mesh coordinates to allow using them for several instances.
     // The format is (x, y, z, point_size, supports_island)
@@ -652,6 +656,8 @@ private:
 
     // Called by min_z(), max_z()
     void update_min_max_z();
+
+    friend class std::vector<ModelObject>; //MJD
 };
 
 enum class ConversionType : int {
@@ -720,6 +726,10 @@ class ModelVolume final : public ObjectBase
 {
 public:
     std::string         name;
+
+    //Is this an internal or external volume          //MJD
+    bool                    internal { true };      //MJD
+
     // struct used by reload from disk command to recover data from disk
     struct Source
     {
@@ -983,7 +993,7 @@ private:
     // Copying an existing volume, therefore this volume will get a copy of the ID assigned.
     ModelVolume(ModelObject *object, const ModelVolume &other) :
         ObjectBase(other),
-        name(other.name), source(other.source), m_mesh(other.m_mesh), m_convex_hull(other.m_convex_hull),
+        internal(other.internal), name(other.name), source(other.source), m_mesh(other.m_mesh), m_convex_hull(other.m_convex_hull),         //MJD
         config(other.config), m_type(other.m_type), object(object), m_transformation(other.m_transformation),
         supported_facets(other.supported_facets), seam_facets(other.seam_facets), mm_segmentation_facets(other.mm_segmentation_facets),
         cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape)
@@ -1006,7 +1016,7 @@ private:
     }
     // Providing a new mesh, therefore this volume will get a new unique ID assigned.
     ModelVolume(ModelObject *object, const ModelVolume &other, TriangleMesh &&mesh) :
-        name(other.name), source(other.source), config(other.config), object(object), m_mesh(new TriangleMesh(std::move(mesh))), m_type(other.m_type), m_transformation(other.m_transformation),
+        internal(other.internal), name(other.name), source(other.source), config(other.config), object(object), m_mesh(new TriangleMesh(std::move(mesh))), m_type(other.m_type), m_transformation(other.m_transformation),  //MJD (internal)
         cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape)
     {
 		assert(this->id().valid()); 

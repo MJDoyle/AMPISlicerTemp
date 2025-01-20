@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.13)
 project(PrusaSlicer-native)
 
 add_subdirectory(clipper)
+add_subdirectory(assembl3r)	#MJD
+
+#target_link_libraries(PrusaSlicer PUBLIC assembl3r)	#MJD
+
+
 find_package(Qhull 7.2 REQUIRED)
 add_library(qhull INTERFACE)
 if(SLIC3R_STATIC)
@@ -110,6 +115,8 @@ if (NOT WIN32 AND NOT APPLE)
 endif ()
 
 target_link_libraries(PrusaSlicer libslic3r libcereal)
+
+
 
 if (APPLE)
 #    add_compile_options(-stdlib=libc++)

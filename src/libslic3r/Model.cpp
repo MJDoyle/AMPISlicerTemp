@@ -120,7 +120,7 @@ Model Model::read_from_file(const std::string& input_file, DynamicPrintConfig* c
 {
     Model model;
 
-    DynamicPrintConfig temp_config;
+    DynamicPrintConfig temp_config; //MJDC Generate temp configs if they haven't been passed
     ConfigSubstitutionContext temp_config_substitutions_context(ForwardCompatibilitySubstitutionRule::EnableSilent);
     if (config == nullptr)
         config = &temp_config;
@@ -129,7 +129,7 @@ Model Model::read_from_file(const std::string& input_file, DynamicPrintConfig* c
 
     bool result = false;
     if (boost::algorithm::iends_with(input_file, ".stl"))
-        result = load_stl(input_file.c_str(), &model);
+        result = load_stl(input_file.c_str(), &model);              //MJDC load stl file
     else if (boost::algorithm::iends_with(input_file, ".obj"))
         result = load_obj(input_file.c_str(), &model);
     else if (boost::algorithm::iends_with(input_file, ".step") || boost::algorithm::iends_with(input_file, ".stp"))
@@ -208,12 +208,16 @@ Model Model::read_from_archive(const std::string& input_file, DynamicPrintConfig
 
 ModelObject* Model::add_object()
 {
+    printf("\nadd object1");        //MJD
+
     this->objects.emplace_back(new ModelObject(this));
     return this->objects.back();
 }
 
 ModelObject* Model::add_object(const char *name, const char *path, const TriangleMesh &mesh)
 {
+    printf("\nadd object2");        //MJD
+
     ModelObject* new_object = new ModelObject(this);
     this->objects.push_back(new_object);
     new_object->name = name;
@@ -229,6 +233,10 @@ ModelObject* Model::add_object(const char *name, const char *path, const Triangl
 
 ModelObject* Model::add_object(const char *name, const char *path, TriangleMesh &&mesh)
 {
+
+    printf("\nadd object3");        //MJD
+        
+
     ModelObject* new_object = new ModelObject(this);
     this->objects.push_back(new_object);
     new_object->name = name;
@@ -244,6 +252,8 @@ ModelObject* Model::add_object(const char *name, const char *path, TriangleMesh 
 
 ModelObject* Model::add_object(const ModelObject &other)
 {
+    printf("\nadd object4");        //MJD
+
 	ModelObject* new_object = ModelObject::new_clone(other);
     new_object->set_model(this);
     this->objects.push_back(new_object);
@@ -337,6 +347,9 @@ ModelMaterial* Model::add_material(t_model_material_id material_id, const ModelM
 // makes sure all objects have at least one instance
 bool Model::add_default_instances()
 {
+
+    printf("Add default instance");         //MJD
+
     // apply a default position to all objects not having one
     for (ModelObject *o : this->objects)
         if (o->instances.empty())
@@ -474,7 +487,11 @@ void Model::convert_multipart_object(unsigned int max_extruders)
 
     unsigned int extruder_counter = 0;
 	for (const ModelObject* o : this->objects)
+    {   //MJD
     	for (const ModelVolume* v : o->volumes) {
+
+            //std::cout << "Volume internal prior to copying: " << v->internal << std::endl;        //MJD
+
             // If there are more than one object, put all volumes together 
             // Each object may contain any number of volumes and instances
             // The volumes transformations are relative to the object containing them...
@@ -485,6 +502,7 @@ void Model::convert_multipart_object(unsigned int max_extruders)
             auto copy_volume = [o, max_extruders, &counter, &extruder_counter](ModelVolume *new_v) {
                 assert(new_v != nullptr);
                 new_v->name = (counter > 1) ? o->name + "_" + std::to_string(counter++) : o->name;
+                new_v->internal = o->internal;                                                              //MJD
                 new_v->config.set("extruder", auto_extruder_id(max_extruders, extruder_counter));
                 return new_v;
             };
@@ -496,6 +514,10 @@ void Model::convert_multipart_object(unsigned int max_extruders)
                 	copy_volume(object->add_volume(*v))->set_transformation(i->get_transformation() * trafo_volume);                    
             }
         }
+
+        //o->internal = true;         //MJD
+
+    }   //MJD
 
     // commented-out to fix #2868
 //    object->add_instance();
@@ -852,6 +874,8 @@ void ModelObject::sort_volumes(bool full_sort)
 
 ModelInstance* ModelObject::add_instance()
 {
+    printf("\nadd instance1");        //MJD
+
     ModelInstance* i = new ModelInstance(this);
     this->instances.push_back(i);
     this->invalidate_bounding_box();
@@ -860,6 +884,8 @@ ModelInstance* ModelObject::add_instance()
 
 ModelInstance* ModelObject::add_instance(const ModelInstance &other)
 {
+    printf("\nadd instance2");        //MJD
+
     ModelInstance* i = new ModelInstance(this, other);
     this->instances.push_back(i);
     this->invalidate_bounding_box();
@@ -868,6 +894,8 @@ ModelInstance* ModelObject::add_instance(const ModelInstance &other)
 
 ModelInstance* ModelObject::add_instance(const Geometry::Transformation& trafo)
 {
+    printf("\nadd instance3");        //MJD
+
     ModelInstance* instance = add_instance();
     instance->set_transformation(trafo);
     return instance;
@@ -1101,6 +1129,12 @@ Polygon ModelObject::convex_hull_2d(const Transform3d& trafo_instance) const
 
 void ModelObject::center_around_origin(bool include_modifiers)
 {
+
+    std::cout << "Center around origin " << name << std::endl;
+
+    std::cout << "start position: " << mesh().center().x() << " " << mesh().center().y() << " " << mesh().center().z() << std::endl;
+
+
     // calculate the displacements needed to 
     // center this object around the origin
     const BoundingBoxf3 bb = include_modifiers ? full_raw_mesh_bounding_box() : raw_mesh_bounding_box();
@@ -1109,7 +1143,12 @@ void ModelObject::center_around_origin(bool include_modifiers)
     const Vec3d shift = -bb.center();
 
     this->translate(shift);
+
+    std::cout << "end1 position: " << mesh().center().x() << " " << mesh().center().y() << " " << mesh().center().z() << std::endl;
+
     this->origin_translation += shift;
+
+    std::cout << "end2 position: " << mesh().center().x() << " " << mesh().center().y() << " " << mesh().center().z() << std::endl;
 }
 
 void ModelObject::ensure_on_bed(bool allow_negative_z)
@@ -1420,6 +1459,10 @@ void ModelObject::split(ModelObjectPtrs* new_objects)
                 // Don't copy the config's ID.
                 new_object->config.assign_config(this->config);
             }
+
+            if (!volume->internal)              //MJD
+                new_object->printable = false;  //MJD
+
             assert(new_object->config.id().valid());
             assert(new_object->config.id() != this->config.id());
             new_object->instances.reserve(this->instances.size());

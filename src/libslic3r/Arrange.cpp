@@ -684,6 +684,16 @@ void arrange(ArrangePolygons &items,
              const SegmentedRectangleBed &bed,
              const ArrangeParams &params)
 {
+
+
+
+    //MJD START
+
+    printf("\nARRANGE0\n");
+
+    //MJD END
+
+
     arrange(items, excludes, bed.bb, params);
 
     if (! excludes.empty())

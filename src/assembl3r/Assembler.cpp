@@ -1,0 +1,532 @@
+#include "Assembler.hpp"
+#include "libslic3r/Print.hpp"
+/*
+    Generate a map of object names to object positions in both the model and the print
+*/
+void Assembl3r::generate_model_object_pairs(Slic3r::Print &print)
+{
+    std::cout << std::endl << "***Generating model pairs***" << std::endl << std::endl;
+
+    std::cout << "***Model objects***" << std::endl << std::endl;
+
+    for (Slic3r::ModelObject* model_object : initial_model.objects)
+    {
+        std::cout   << "ID: " << model_object->id().id 
+                    << " Name: " << model_object->name 
+                    << " Internal: " << model_object->volumes[0]->internal
+                    << " Position: "  << model_object->mesh().center().x() << " " << model_object->mesh().center().y() << " " << model_object->mesh().center().z() << std::endl;
+                    
+    }
+
+    std::cout << std::endl << "***Print objects***" << std::endl << std::endl;
+
+    for (auto print_object : print.objects())
+    {
+        for (auto print_instance : print_object->instances())
+        {
+            std::cout   << "ID: " << print_instance.model_instance->get_object()->id().id 
+                        << " Name: " << print_instance.model_instance->get_object()->name
+                        << " Internal: " << print_instance.model_instance->get_object()->volumes[0]->internal
+                        << " Position: "  << print_instance.model_instance->get_object()->mesh().center().x() << " " << print_instance.model_instance->get_object()->mesh().center().y() << " " << print_instance.model_instance->get_object()->mesh().center().z() << std::endl;
+        }
+    }
+
+
+    //Iterate through model objects and populate the map
+    for (Slic3r::ModelObject* model_object : initial_model.objects)
+    {
+        m_object_map[model_object->id().id] = ModelObjectPairPtrs();
+
+        m_object_map[model_object->id().id].model_object = model_object;
+
+        m_object_map[model_object->id().id].id = model_object->id().id;
+    }
+
+    //Find the corresponding models from the print objects
+    for (auto print_object : print.objects())
+    {
+        for (auto print_instance : print_object->instances())
+        {
+            size_t object_id = print_instance.model_instance->get_object()->id().id;
+
+            if (m_object_map.count(object_id))
+                m_object_map[object_id].print_object = print_instance.model_instance->get_object();
+
+            else
+                std::cerr << "Error - no corresponding model object found for print object" << std::endl;
+        }       
+    }
+
+    //Check that all print objects have been set - note that a model object without a print object could be an external part
+    for (auto const& [id, object_pair] : m_object_map)
+    {
+        if (object_pair.print_object == nullptr)
+        {
+            if (!object_pair.model_object->volumes[0]->internal)
+                std::cout << "External part detected" << std::endl;
+
+            else
+                std::cerr << "Error - no corrsponding print object found for model object" << std::endl;
+        }
+    }   
+}
+
+
+bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::vector<stl_vertex> line)
+{
+    std::cout << "Triangle line intersect test" << std::endl;
+
+    std::cout << "Triangle size: " << triangle.size() << std::endl;
+
+    std::cout << "Line size: " << line.size() << std::endl;
+
+    //Compute triangle normal
+    stl_vertex triangle_normal = (triangle[1] - triangle[0]).cross(triangle[2] - triangle[0]);
+
+    std::cout << "check1" << std::endl;
+
+    //Compute line direction vector
+    stl_vertex line_direction = line[1] - line[0];
+
+    std::cout << "check2" << std::endl;
+
+    //Check angle between line and normal
+    float triangle_normal_dot_line_direction = triangle_normal.dot(line_direction);
+
+    std::cout << "check3" << std::endl;
+
+    //A value of 0 indicates an angle of 90 -> the line and triangle are parallel and so don't intersect
+    if (triangle_normal_dot_line_direction == 0)
+        return false; 
+
+    std::cout << "check4" << std::endl;
+
+    //Compute vector from line start point to any triangle point
+    stl_vertex line_triangle_delta = triangle[0] - line[0];
+
+    std::cout << "check5" << std::endl;
+
+    //Compute intersection parameter
+    float intersection_parameter = triangle_normal.dot(line_triangle_delta) / triangle_normal_dot_line_direction;
+
+    std::cout << "check6" << std::endl;
+
+    //If paramter does not lie within 0 <= t <= 1, there is no intersection
+    if (intersection_parameter < 0 || intersection_parameter > 1)
+        return false;
+
+    std::cout << "check7" << std::endl;
+
+    //Compute the intersection point
+    stl_vertex intersection_point = line[0] + intersection_parameter * line_direction;
+
+    std::cout << "check8" << std::endl;
+
+    //Perform a point-in-triangle test in 3D using the barycentric method
+    stl_vertex v_0 = triangle[2] - triangle[0];
+    stl_vertex v_1 = triangle[1] - triangle[0];
+    stl_vertex v_2 = intersection_point - triangle[0];
+
+    std::cout << "check9" << std::endl;
+
+    float d_00 = v_0.dot(v_0);
+    float d_01 = v_0.dot(v_1);
+    float d_11 = v_1.dot(v_1);
+    float d_20 = v_2.dot(v_0);
+    float d_21 = v_2.dot(v_1);
+
+    std::cout << "check10" << std::endl;
+
+    float denom = d_00 * d_11 - d_01 * d_01;
+
+    float u = (d_11 * d_20 - d_01 * d_21) / denom;
+
+    float v = (d_00 * d_21 - d_01 * d_20) / denom;
+
+    if (u >= 0 && v >= 0 and u + v <= 1)
+        return true;
+
+    return false;
+
+}
+
+bool Assembl3r::triangles_intersect(std::vector<stl_vertex> triangle_A, std::vector<stl_vertex> triangle_B)
+{
+    std::cout << "Triangles intersect test" << std::endl;
+
+    std::vector<stl_vertex> line_A_a;
+    std::vector<stl_vertex> line_A_b;
+    std::vector<stl_vertex> line_A_c;
+
+    line_A_a.push_back(triangle_A[0]);
+    line_A_a.push_back(triangle_A[1]);
+
+    line_A_b.push_back(triangle_A[1]);
+    line_A_b.push_back(triangle_A[2]);
+
+    line_A_c.push_back(triangle_A[2]);
+    line_A_c.push_back(triangle_A[0]);
+
+
+
+    std::vector<stl_vertex> line_B_a;
+    std::vector<stl_vertex> line_B_b;
+    std::vector<stl_vertex> line_B_c;
+
+    line_B_a.push_back(triangle_B[0]);
+    line_B_a.push_back(triangle_B[1]);
+
+    line_B_b.push_back(triangle_B[1]);
+    line_B_b.push_back(triangle_B[2]);
+
+    line_B_c.push_back(triangle_B[2]);
+    line_B_c.push_back(triangle_B[0]);
+
+    if (triangle_line_intersect(triangle_A, line_B_a))
+        return true;
+
+    if (triangle_line_intersect(triangle_A, line_B_b))
+        return true;
+
+    if (triangle_line_intersect(triangle_A, line_B_c))
+        return true;
+
+    if (triangle_line_intersect(triangle_B, line_A_a))
+        return true;
+
+    if (triangle_line_intersect(triangle_B, line_A_b))
+        return true;
+
+    if (triangle_line_intersect(triangle_B, line_A_c))
+        return true;
+    
+    return false;
+}
+
+
+
+bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMesh mesh_2)
+{
+    std::cout << "Meshes intersect test" << std::endl;
+
+    std::vector<stl_triangle_vertex_indices> indices_1 = mesh_1.its.indices;
+
+    std::vector<stl_triangle_vertex_indices> indices_2 = mesh_2.its.indices;
+
+    std::vector<stl_vertex> vertices_1 = mesh_1.its.vertices;
+
+    std::vector<stl_vertex> vertices_2 = mesh_2.its.vertices;
+
+    for (auto triangle_1 : indices_1)
+    {
+        for (auto triangle_2 : indices_2)
+        {
+            //https://stackoverflow.com/questions/7113344/find-whether-two-triangles-intersect-or-not
+            //For each triangle pair there are two ways they could intersect: either two edges of triangle A intersect with triangle B, or one edge of triangle A
+            //intersects with triangle B and one edge of triangle B intersects with triangle A
+            //This doesn't account for the possiblity of co-planar triangles, but for our cae we're happy to treat this situation as the triangles not intersecting
+
+            //Obtain the triangle vertices
+            std::vector<stl_vertex> triangle_A;
+            std::vector<stl_vertex> triangle_B;
+
+            triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(0)]).finished());
+            triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(1)]).finished());
+            triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(2)]).finished());
+
+            triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(0)]).finished());
+            triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(1)]).finished());
+            triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(2)]).finished());
+
+            //triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(0)], vertices_1[triangle_1(1)], vertices_1[triangle_1(2)]).finished());
+            //triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(0)], vertices_2[triangle_2(1)], vertices_2[triangle_2(2)]).finished());
+
+            if (triangles_intersect(triangle_A, triangle_B))
+                return true;             
+        }
+    }
+
+
+
+
+    return false;
+}
+
+/*
+    Generate a GCode string commanding the toolhead to move to the safe height as determined by model size.
+    Add the string to the list of assembly commands.
+*/
+void Assembl3r::GCODE_go_to_safe_height()
+{
+    std::stringstream command_stream;
+
+    command_stream << "G0 Z" << m_safe_height << " ;Lower bed to safe height";
+
+    m_assembly_commands.push_back(command_stream.str());
+}
+
+void Assembl3r::GCODE_go_to_height(double height, double feed_rate /*=1000*/)
+{
+    std::stringstream command_stream;
+
+    //Default feed rate - G0
+    if (feed_rate == double(1000))
+        command_stream << "G0 Z" << height << " ;Set bed height";
+
+    //Specified feed rate - G1
+    else
+        command_stream << "G1 Z" << height << " F" << feed_rate << " ;Set bed height";
+
+    m_assembly_commands.push_back(command_stream.str());
+}
+
+void Assembl3r::GCODE_go_to_position(double x_pos, double y_pos, double feed_rate /*=1000*/)
+{
+    std::stringstream command_stream;
+
+    //Default feed rate - G0
+    if (feed_rate == double(1000))
+        command_stream << "G0 X" << x_pos << " Y" << y_pos << " ;Move to XY position";
+
+    //Specified feed rate - G1
+    else
+        command_stream << "G1 X" << x_pos << " Y" << y_pos << " F" << feed_rate << " ;Move to XY position";
+
+    m_assembly_commands.push_back(command_stream.str());
+}
+
+void Assembl3r::GCODE_change_to_gripper()
+{
+    m_assembly_commands.push_back(std::string("TOOL_PICKUP T=3 ;Pick up gripper tool"));
+}
+
+void Assembl3r::GCODE_change_to_vacuum()
+{
+    m_assembly_commands.push_back(std::string("TOOL_PICKUP T=2 ;Pick up vacuum tool"));
+}
+
+void Assembl3r::GCODE_change_to_extruder()
+{
+    m_assembly_commands.push_back(std::string("TOOL_PICKUP T=0 ;Pick up extruder tool"));
+}
+
+void Assembl3r::GCODE_open_gripper()
+{
+    m_assembly_commands.push_back(std::string("GRIPPER_OPEN ;Open the gripper"));
+}
+
+void Assembl3r::GCODE_close_gripper(double close_value)
+{
+    std::stringstream command_stream;
+
+    command_stream << "GRIPPER_CLOSE CLOSURE=" << close_value << " ;Close the gripper";
+
+    m_assembly_commands.push_back(command_stream.str());
+}
+
+void Assembl3r::GCODE_vibrate_gripper(int cycles, double amplitude, int acceleration)
+{
+    std::stringstream command_stream;
+
+    command_stream << "GRIPPER_BUZZ CYCLES=" << cycles << " AMPLITUDE=" << amplitude << " ACCELERATION=" << acceleration << " ;Vibrate the gripper";
+
+    m_assembly_commands.push_back(command_stream.str());
+}
+
+void Assembl3r::GCODE_vacuum_on()
+{
+    m_assembly_commands.push_back(std::string("VACUUM_ON ;Turn vacuum on"));
+}
+
+void Assembl3r::GCODE_vacuum_off()
+{
+    m_assembly_commands.push_back(std::string("VACUUM_OFF ;Turn vacuum off"));
+}
+
+
+std::vector<std::string> Assembl3r::simple_rotation(Slic3r::Print &print)
+{
+    // generate_model_object_pairs(print);
+
+    // if (m_object_map.size() == 0)
+    //     return m_assembly_commands;
+
+    // //Iterate though each part, vibrate it, pick it, rotate it, place it
+    // for (auto const& [name, object_pair] : m_object_map)
+    // {
+    //     object_pair.print_object
+    // }
+
+    return m_assembly_commands;
+}
+
+
+std::vector<std::string> Assembl3r::simple_layer_assembly(Slic3r::Print &print)
+{
+    generate_model_object_pairs(print);
+
+    if (m_object_map.size() == 0)
+        return m_assembly_commands;
+
+    //TODO
+    return m_assembly_commands;
+
+    //Transfer the object pairs into a vector and sort based on model z height
+
+    std::vector<ModelObjectPairPtrs> sorted_object_pairs;
+
+    for (auto const& [id, object_pair] : m_object_map)
+        sorted_object_pairs.push_back(object_pair);
+
+    std::sort(sorted_object_pairs.begin(), sorted_object_pairs.end(), [](const auto& a, const auto& b) {return a.model_object->mesh().center().z() < b.model_object->mesh().center().z();});
+
+
+    //Look at rotations (ModelInstance)
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    {
+        std::cout << "sorted pair: " << object_pair.id << " " << object_pair.model_object->name << " " << object_pair.model_object->mesh().center().z() << std::endl;
+
+        Slic3r::Vec3d model_rotation_instance = object_pair.model_object->instances[0]->get_rotation();
+
+        Slic3r::Vec3d print_rotation_instance = object_pair.print_object->instances[0]->get_rotation();
+
+        std::cout << "Model instance rotation: " << model_rotation_instance.x() << " " << model_rotation_instance.y() << " " << model_rotation_instance.z() << std::endl;
+
+        std::cout << "Print instance rotation: " << print_rotation_instance.x() << " " << print_rotation_instance.y() << " " << print_rotation_instance.z() << std::endl;
+    }
+
+    //Check for intersection
+    //if (sorted_object_pairs.size() > 1 && meshes_intersect(sorted_object_pairs[0].model_object->mesh(), sorted_object_pairs[1].model_object->mesh()))
+    //    std::cout << "MESHES INTERSECT" << std::endl;
+
+    // //Look at meshes (also in ModelVolume)
+    // for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    // {
+    //     std::cout << "Mesh: " << std::endl;
+
+    //     std::vector<stl_triangle_vertex_indices> indices = object_pair.model_object->mesh().its.indices;
+
+    //     std::vector<stl_vertex> vertices = object_pair.model_object->mesh().its.vertices;
+
+    //     std::cout << "Vertices: " << std::endl;
+
+    //     for (stl_vertex v : vertices)
+    //         std::cout << v(0) << " " << v(1) << " " << v(2) << std::endl;
+
+
+
+    //     std::cout << "Indices: " << std::endl;
+
+    //     for (stl_triangle_vertex_indices tvi : indices)
+    //         std::cout << tvi(0) << " " << tvi(1) << " " << tvi(2) << std::endl;
+    // }
+    
+
+
+    //Select the first object as the base object
+    size_t base_id = sorted_object_pairs[0].id;
+
+    //Offset between base object position in print and in model
+    Slic3r::Vec3d base_offset = sorted_object_pairs[0].model_object->mesh().center() - sorted_object_pairs[0].print_object->mesh().center();
+
+    //Check that the base offset is zero - the base part must be on the bed in both the model and the print
+    if (base_offset.z() != 0)
+        std::cerr << "Error - z offset of base part is not zero" << std::endl;
+
+    std::cout << "Assembly positions:" << std::endl;
+
+    std::cout << "Bed positions:" << std::endl;
+
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+        std::cout << object_pair.id << " " << object_pair.print_object->mesh().center().x() << " " << object_pair.print_object->mesh().center().y() << " " << object_pair.print_object->mesh().center().z() << std::endl;
+
+
+    std::cout << "Model positions:" << std::endl;
+
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+        std::cout << object_pair.id << " " << object_pair.model_object->mesh().center().x() << " " << object_pair.model_object->mesh().center().y() << " " << object_pair.model_object->mesh().center().z() << std::endl;
+
+    std::cout << "Offset: " << base_offset.x() << " " << base_offset.y() << " " << base_offset.z() << std::endl;
+
+    //Calculate the safe height in millimeters - all objects will be below this height
+    //TODO - this is insufficient if initial model gets rotated or if individual parts are printed standing on end etc.
+    m_safe_height = initial_model.max_z() + 10;
+
+    //Set to safe height
+    GCODE_go_to_safe_height();
+
+    //Change to gripper
+    GCODE_change_to_gripper();  
+
+    //Open gripper
+    GCODE_open_gripper();   
+
+    //Iterate through each of the objects and vibrate them (except for the base object)
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    {
+        //Do nothing with the base object
+        if (object_pair.id == base_id)
+            continue;
+
+        //Go to the object print position
+        GCODE_go_to_position(object_pair.print_object->mesh().center().x(), object_pair.print_object->mesh().center().y());     
+
+        //Lower gripper to bed
+        GCODE_go_to_height(0);
+
+        //Close gripper
+        GCODE_close_gripper(-10);
+
+        //Vibrate gripper
+        GCODE_vibrate_gripper(300, 0.09);
+
+        GCODE_vibrate_gripper(100, 0.11);
+
+        GCODE_vibrate_gripper(5, 0.4, 1000);
+
+        //Open gripper
+        GCODE_open_gripper();
+
+        //Return to safe height
+        GCODE_go_to_safe_height();      
+    }
+
+    //Change to vacuum
+    GCODE_change_to_vacuum();
+
+    //Iterate through each of the objects and pick and place them (except for the base object)
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    {
+        //Do nothing with the base object
+        if (object_pair.id == base_id)
+            continue;
+
+        //Go to the object print position
+        GCODE_go_to_position(object_pair.print_object->mesh().center().x(), object_pair.print_object->mesh().center().y());
+
+        //Lower vacuum to object top -2 for better pickup
+        GCODE_go_to_height(object_pair.print_object->max_z() - 2);
+
+        //Start vacuum
+        GCODE_vacuum_on();
+
+        //Go to safe height
+        GCODE_go_to_safe_height();
+
+        //Go to object model position
+        Slic3r::Vec3d target_position = object_pair.model_object->mesh().center() - base_offset;
+
+        GCODE_go_to_position(target_position.x(), target_position.y());
+
+        //Lower vacuum to object top -2 for better place
+        GCODE_go_to_height(object_pair.model_object->max_z() - 2);
+
+        //Stop vacuum
+        GCODE_vacuum_off();
+
+        //Go to safe height
+        GCODE_go_to_safe_height();
+    }
+
+    return m_assembly_commands;
+}

@@ -25,6 +25,9 @@ namespace Slic3r {
 
 bool load_stl(const char *path, Model *model, const char *object_name_in)
 {
+
+    printf("\nLOADMODEL1\n");   //MJD
+
     TriangleMesh mesh;
     if (! mesh.ReadSTLFile(path)) {
 //    die "Failed to open $file\n" if !-e $path;
@@ -41,6 +44,9 @@ bool load_stl(const char *path, Model *model, const char *object_name_in)
         object_name.assign((last_slash == nullptr) ? path : last_slash + 1);
     } else
        object_name.assign(object_name_in);
+
+    printf(object_name.c_str());        //MJD   
+    printf("\n");                       //MJD
 
     model->add_object(object_name.c_str(), path, std::move(mesh));
     return true;

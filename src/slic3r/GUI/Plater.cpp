@@ -38,6 +38,8 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
+#include <iostream> //MJD
+
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/button.h>
@@ -73,6 +75,8 @@
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/miniz_extension.hpp"
+
+#include "assembl3r/Assembler.hpp"  //MJD
 
 // For stl export
 #include "libslic3r/CSGMesh/ModelToCSGMesh.hpp"
@@ -414,7 +418,7 @@ struct Plater::priv
     bool get_config_bool(const std::string &key) const;
 
     std::vector<size_t> load_files(const std::vector<fs::path>& input_files, bool load_model, bool load_config, bool used_inches = false);
-    std::vector<size_t> load_model_objects(const ModelObjectPtrs& model_objects, bool allow_negative_z = false, bool call_selection_changed = true);
+    std::vector<size_t> load_model_objects(const ModelObjectPtrs& model_objects, bool allow_negative_z = false, bool call_selection_changed = true, bool clamp_z = true);   //MJD  
 
     fs::path get_export_file_path(GUI::FileType file_type);
     wxString get_export_file(GUI::FileType file_type);
@@ -620,7 +624,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         "layer_height", "first_layer_height", "min_layer_height", "max_layer_height",
         "brim_width", "perimeters", "perimeter_extruder", "fill_density", "infill_extruder", "top_solid_layers", 
         "support_material", "support_material_extruder", "support_material_interface_extruder", 
-        "support_material_contact_distance", "support_material_bottom_contact_distance", "raft_layers"
+        "support_material_contact_distance", "support_material_bottom_contact_distance", "raft_layers", "enable_assembly" //<- MJD
         }))
     , sidebar(new Sidebar(q))
     , notification_manager(std::make_unique<NotificationManager>(q))
@@ -695,7 +699,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         view3D_canvas->Bind(EVT_GLCANVAS_OBJECT_SELECT, &priv::on_object_select, this);
         view3D_canvas->Bind(EVT_GLCANVAS_RIGHT_CLICK, &priv::on_right_click, this);
         view3D_canvas->Bind(EVT_GLCANVAS_REMOVE_OBJECT, [q](SimpleEvent&) { q->remove_selected(); });
-        view3D_canvas->Bind(EVT_GLCANVAS_ARRANGE, [this](SimpleEvent&) { this->q->arrange(); });
+        view3D_canvas->Bind(EVT_GLCANVAS_ARRANGE, [this](SimpleEvent&) { this->q->arrange(); });       
         view3D_canvas->Bind(EVT_GLCANVAS_SELECT_ALL, [this](SimpleEvent&) { this->q->select_all(); });
         view3D_canvas->Bind(EVT_GLCANVAS_QUESTION_MARK, [](SimpleEvent&) { wxGetApp().keyboard_shortcuts(); });
         view3D_canvas->Bind(EVT_GLCANVAS_INCREASE_INSTANCES, [this](Event<int>& evt)
@@ -727,7 +731,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         view3D_canvas->Bind(EVT_GLTOOLBAR_DELETE, [q](SimpleEvent&) { q->remove_selected(); });
         view3D_canvas->Bind(EVT_GLTOOLBAR_DELETE_ALL, [this](SimpleEvent&) { delete_all_objects_from_model(); });
 //        view3D_canvas->Bind(EVT_GLTOOLBAR_DELETE_ALL, [q](SimpleEvent&) { q->reset_with_confirm(); });
-        view3D_canvas->Bind(EVT_GLTOOLBAR_ARRANGE, [this](SimpleEvent&) { this->q->arrange(); });
+        view3D_canvas->Bind(EVT_GLTOOLBAR_ARRANGE, [this](SimpleEvent&) { printf("\n\nARRANGE0\n\n"); this->q->arrange(); });   //MJD
         view3D_canvas->Bind(EVT_GLTOOLBAR_COPY, [q](SimpleEvent&) { q->copy_selection_to_clipboard(); });
         view3D_canvas->Bind(EVT_GLTOOLBAR_PASTE, [q](SimpleEvent&) { q->paste_from_clipboard(); });
         view3D_canvas->Bind(EVT_GLTOOLBAR_MORE, [q](SimpleEvent&) { q->increase_instances(); });
@@ -1175,18 +1179,19 @@ void Plater::notify_about_installed_presets()
     }
 }
 
+//MJDC returns vector of object indices
 std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_files, bool load_model, bool load_config, bool imperial_units/* = false*/)
 {
-     if (input_files.empty()) { return std::vector<size_t>(); }
+     if (input_files.empty()) { return std::vector<size_t>(); } //MJDC check that some input paths have been passed
 
-    auto *nozzle_dmrs = config->opt<ConfigOptionFloats>("nozzle_diameter");
+    auto *nozzle_dmrs = config->opt<ConfigOptionFloats>("nozzle_diameter"); //MJDC get the nozzle diamter config option
 
-    PlaterAfterLoadAutoArrange plater_after_load_auto_arrange;
+    PlaterAfterLoadAutoArrange plater_after_load_auto_arrange;  //MJDC Simple class with an enabled bool that defaults to false unless the print bed is already empty, the print type is fff, and the printer is 'XL'
 
-    bool one_by_one = input_files.size() == 1 || printer_technology == ptSLA || nozzle_dmrs->values.size() <= 1;
+    bool one_by_one = input_files.size() == 1 || printer_technology == ptSLA || nozzle_dmrs->values.size() <= 1;    //MJDC Go one by one if only one input file or nozzle, or an SLA print
     if (! one_by_one) {
         for (const auto &path : input_files) {
-            if (std::regex_match(path.string(), pattern_bundle)) {
+            if (std::regex_match(path.string(), pattern_bundle)) {  //MJDC For certain types of input file go one by one anyway
                 one_by_one = true;
                 break;
             }
@@ -1202,7 +1207,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     // appear at all. Therefore, we create the dialog on stack on Win and macOS, and on heap on Linux, which
     // is the only system that needed the workarounds in the first place.
 #ifdef __linux__
-    auto progress_dlg = new wxProgressDialog(loading, "", 100, find_toplevel_parent(q), wxPD_APP_MODAL | wxPD_AUTO_HIDE);
+    auto progress_dlg = new wxProgressDialog(loading, "", 100, find_toplevel_parent(q), wxPD_APP_MODAL | wxPD_AUTO_HIDE);   //MJDC Basically just show a progress bar of the load
     Slic3r::ScopeGuard([&progress_dlg](){ if (progress_dlg) progress_dlg->Destroy(); progress_dlg = nullptr; });
 #else
     wxProgressDialog progress_dlg_stack(loading, "", 100, find_toplevel_parent(q), wxPD_APP_MODAL | wxPD_AUTO_HIDE);
@@ -1212,7 +1217,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
     wxBusyCursor busy;
 
-    auto *new_model = (!load_model || one_by_one) ? nullptr : new Slic3r::Model();
+    auto *new_model = (!load_model || one_by_one) ? nullptr : new Slic3r::Model();      //MJDC nullptr if going one by one
     std::vector<size_t> obj_idxs;
 
     int answer_convert_from_meters          = wxOK_DEFAULT;
@@ -1220,10 +1225,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     int answer_consider_as_multi_part_objects = wxOK_DEFAULT;
 
     bool in_temp = false; 
-    const fs::path temp_path = wxStandardPaths::Get().GetTempDir().utf8_str().data();
+    const fs::path temp_path = wxStandardPaths::Get().GetTempDir().utf8_str().data();   //MJDC generate a temp path
 
     size_t input_files_size = input_files.size();
-    for (size_t i = 0; i < input_files_size; ++i) {
+    for (size_t i = 0; i < input_files_size; ++i) {     //MJDC iterate through each input file
 #ifdef _WIN32
         auto path = input_files[i];
         // On Windows, we swap slashes to back slashes, see GH #6803 as read_from_file() does not understand slashes on Windows thus it assignes full path to names of loaded objects.
@@ -1232,14 +1237,14 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         // Don't make a copy on Posix. Slash is a path separator, back slashes are not accepted as a substitute.
         const auto &path = input_files[i];
 #endif // _WIN32
-        in_temp = (path.parent_path() == temp_path);
+        in_temp = (path.parent_path() == temp_path);    //MJDC check if the file path is already in the temp path
         const auto filename = path.filename();
         if (progress_dlg) {
-            progress_dlg->Update(static_cast<int>(100.0f * static_cast<float>(i) / static_cast<float>(input_files.size())), _L("Loading file") + ": " + from_path(filename));
+            progress_dlg->Update(static_cast<int>(100.0f * static_cast<float>(i) / static_cast<float>(input_files.size())), _L("Loading file") + ": " + from_path(filename));   //MJDC Just update the progress bar
             progress_dlg->Fit();
         }
 
-        const bool type_3mf = std::regex_match(path.string(), pattern_3mf) || std::regex_match(path.string(), pattern_zip);
+        const bool type_3mf = std::regex_match(path.string(), pattern_3mf) || std::regex_match(path.string(), pattern_zip); //MJDC define a bunch of bools corresponidng to the file type
         const bool type_zip_amf = !type_3mf && std::regex_match(path.string(), pattern_zip_amf);
         const bool type_any_amf = !type_3mf && std::regex_match(path.string(), pattern_any_amf);
         const bool type_prusa = std::regex_match(path.string(), pattern_prusa);
@@ -1255,7 +1260,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         Slic3r::Model model;
         bool is_project_file = type_prusa;
         try {
-            if (type_3mf || type_zip_amf) {
+            if (type_3mf || type_zip_amf) {     //MJDC load 3mf and amf file types, not relevant for us
 #ifdef __linux__
                 // On Linux Constructor of the ProgressDialog calls DisableOtherWindows() function which causes a disabling of all children of the find_toplevel_parent(q)
                 // And a destructor of the ProgressDialog calls ReenableOtherWindows() function which revert previously disabled children.
@@ -1342,12 +1347,17 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         wxGetApp().app_config->update_config_dir(path.parent_path().string());
                 }
             }
-            else {
-                model = Slic3r::Model::read_from_file(path.string(), nullptr, nullptr, only_if(load_config, Model::LoadAttribute::CheckVersion));
-                for (auto obj : model.objects)
+            else {      //MJDC Read other file types including STL
+
+                printf("\nLOADMODEL0\n"); //MJD
+
+                //MJDC the below line ultiatmely loads the model and creates new objects for the model, but doesn't load the objects persay. That comes later (load_model_objects)
+                model = Slic3r::Model::read_from_file(path.string(), nullptr, nullptr, only_if(load_config, Model::LoadAttribute::CheckVersion));   //MJDC Reads in just a single object if it's an STL I think
+                for (auto obj : model.objects)      //MJDC set each object model name if it doesn't already have one
                     if (obj->name.empty())
                         obj->name = fs::path(obj->input_file).filename().string();
             }
+
         } catch (const ConfigurationError &e) {
             std::string message = GUI::format(_L("Failed loading file \"%1%\" due to an invalid configuration."), filename.string()) + "\n\n" + e.what();
             GUI::show_error(q, message);
@@ -1360,6 +1370,24 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         if (load_model) {
             // The model should now be initialized
 
+            //MJD START
+
+            std::cout << std::endl << "Objects post initialization: " << std::endl;
+
+            for (auto modelObject : model.objects)
+            {
+                std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+                for (auto modelVolume : modelObject->volumes)
+                {
+                    std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+                }
+            }
+
+            std::cout << std::endl;
+
+            //MJD END
+
             auto convert_from_imperial_units = [](Model& model, bool only_small_volumes) {
                 model.convert_from_imperial_units(only_small_volumes);
 //                wxGetApp().app_config->set("use_inches", "1");
@@ -1367,7 +1395,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             };
 
             if (!is_project_file) {
-                if (int deleted_objects = model.removed_objects_with_zero_volume(); deleted_objects > 0) {
+                if (int deleted_objects = model.removed_objects_with_zero_volume(); deleted_objects > 0) {      //MJDC check for objects in the model that have zero volume
                     MessageDialog(q, format_wxstr(_L_PLURAL(
                         "Object size from file %s appears to be zero.\n"
                         "This object has been removed from the model",
@@ -1375,7 +1403,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         "These objects have been removed from the model", deleted_objects), from_path(filename)) + "\n",
                         _L("The size of the object is zero"), wxICON_INFORMATION | wxOK).ShowModal();
                 }
-                if (imperial_units)
+                if (imperial_units)                             //MJDC just some conversions, not relevant
                     // Convert even if the object is big.
                     convert_from_imperial_units(model, false);
                 else if (!type_3mf && model.looks_like_saved_in_meters()) {
@@ -1400,7 +1428,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     }
                     convert_model_if(model, answer_convert_from_meters == wxID_YES);
                 }
-                else if (!type_3mf && model.looks_like_imperial_units()) {
+                else if (!type_3mf && model.looks_like_imperial_units()) {              //MJDC just some conversions, not relevant
                     auto convert_model_if = [convert_from_imperial_units](Model& model, bool condition) {
                         if (condition)
                             //FIXME up-scale only the small parts?
@@ -1423,7 +1451,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     convert_model_if(model, answer_convert_from_imperial_units == wxID_YES);
                 }
 
-                if (!type_printRequest && model.looks_like_multipart_object()) {
+                //MJDC The below is what happening to convert multiple objects each with individual volumes into single object with multiple volumes
+
+                if (!type_printRequest && model.looks_like_multipart_object()) {        //MJDC not relevant for STLs, but relevant for .3mf
                     if (answer_consider_as_multi_part_objects == wxOK_DEFAULT) {
                         RichMessageDialog dlg(q, _L(
                             "This file contains several objects positioned at multiple heights.\n"
@@ -1441,7 +1471,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         model.convert_multipart_object(nozzle_dmrs->size());
                 }
             }
-            if ((wxGetApp().get_mode() == comSimple) && (type_3mf || type_any_amf) && model_has_advanced_features(model)) {
+            if ((wxGetApp().get_mode() == comSimple) && (type_3mf || type_any_amf) && model_has_advanced_features(model)) {     //MJDC not relevant
                 MessageDialog msg_dlg(q, _L("This file cannot be loaded in a simple mode. Do you want to switch to an advanced mode?")+"\n",
                     _L("Detected advanced data"), wxICON_WARNING | wxOK | wxCANCEL);
                 if (msg_dlg.ShowModal() == wxID_OK) {
@@ -1452,15 +1482,56 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     return obj_idxs;
             }
 
-            for (ModelObject* model_object : model.objects) {
+
+            //MJD START
+
+            std::cout << std::endl << "Objects post post initialization: " << std::endl;
+
+            for (auto modelObject : model.objects)
+            {
+                std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+                for (auto modelVolume : modelObject->volumes)
+                {
+                    std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+                }
+            }
+
+            std::cout << std::endl;
+
+            //MJD END
+
+            for (ModelObject* model_object : model.objects) {           //MJDC iterate through objects in model
+
+
+                //MJD START
+
+                printf("\nMODEL OBJECT LOADED\n");      
+                printf(model_object->name.c_str());   
+
+                for (ModelInstance* model_instance: model_object->instances)
+                {
+                    printf("\ninstance\n");
+                }
+                
+                for (ModelVolume* model_volume: model_object->volumes)
+                {
+                    printf("\nvolume\n");
+                }
+
+                printf("\n\n");                          
+
+
+                //MJD END
+
                 if (!type_3mf && !type_zip_amf) {
-                    model_object->center_around_origin(false);
-                    if (type_any_amf && model_object->instances.empty()) {
+                    model_object->center_around_origin(false);          //MJDC center the object (what if there are multiple objects)
+                    if (type_any_amf && model_object->instances.empty()) {          //MJDC nothing too relevant
                         ModelInstance* instance = model_object->add_instance();
                         instance->set_offset(-model_object->origin_translation);
                     }
                 }
-                if (!model_object->instances.empty())
+                if (!model_object->instances.empty())                   //MJDC not quite sure about this
                   model_object->ensure_on_bed(is_project_file);
                 if (type_printRequest)  {
                     for (ModelInstance* obj_instance : model_object->instances)  {
@@ -1468,7 +1539,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     }
                 }
             }
-            if (type_printRequest) {
+            if (type_printRequest) {                        //MJDC not relevant
                 assert(model.materials.size());
 
                 for (const auto& material : model.materials) {
@@ -1516,23 +1587,46 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             }
 
             if (one_by_one) {
-                if ((type_3mf && !is_project_file) || (type_any_amf && !type_zip_amf))
+                if ((type_3mf && !is_project_file) || (type_any_amf && !type_zip_amf))              //MJDC not relevant
                     model.center_instances_around_point(this->bed.build_volume().bed_center());
-                auto loaded_idxs = load_model_objects(model.objects, is_project_file);
+                auto loaded_idxs = load_model_objects(model.objects, is_project_file);              //MJDC loads the model objects, but not sure what is doing when I thought it was done earlier
                 obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
+                printf("\nLOADMODEL2");
             } else {
                 // This must be an .stl or .obj file, which may contain a maximum of one volume.
                 for (const ModelObject* model_object : model.objects) {
                     new_model->add_object(*model_object);
                 }
+                printf("\nLOADMODEL3");
             }
 
             if (is_project_file)
                 plater_after_load_auto_arrange.disable();
+
+            //MJD START
+            for (ModelObject* model_object : model.objects) {
+
+                printf("\nMODEL OBJECT LOADED\n");      
+                printf(model_object->name.c_str());  
+
+                for (ModelInstance* model_instance: model_object->instances)
+                {
+                    printf("\ninstance\n");
+                }
+                
+                for (ModelVolume* model_volume: model_object->volumes)
+                {
+                    printf("\nvolume\n");
+                }
+
+                printf("\n\n");                          
+            }
+
+            //MJD END
         }
     }
 
-    if (new_model != nullptr && new_model->objects.size() > 1) {
+    if (new_model != nullptr && new_model->objects.size() > 1) {                                //MJDC not relevant at this stage
         //wxMessageDialog msg_dlg(q, _L(
         MessageDialog msg_dlg(q, _L(
                 "Multiple objects were loaded for a multi-material printer.\n"
@@ -1546,6 +1640,12 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         auto loaded_idxs = load_model_objects(new_model->objects);
         obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
     }
+
+
+
+
+
+
 
     if (load_model && !in_temp) {
         wxGetApp().app_config->update_skein_dir(input_files[input_files.size() - 1].parent_path().make_preferred().string());
@@ -1576,8 +1676,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
 // #define AUTOPLACEMENT_ON_LOAD
 
-std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& model_objects, bool allow_negative_z, bool call_selection_changed /*= true*/)
+std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& model_objects, bool allow_negative_z, bool call_selection_changed, bool clamp_z /*= true*/) //MJD
 {
+    printf("\nload model objects\n");
+
     const Vec3d bed_size = Slic3r::to_3d(this->bed.build_volume().bounding_volume2d().size(), 1.0) - 2.0 * Vec3d::Ones();
 
 #ifndef AUTOPLACEMENT_ON_LOAD
@@ -1585,7 +1687,8 @@ std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& mode
 #endif /* AUTOPLACEMENT_ON_LOAD */
     bool scaled_down = false;
     std::vector<size_t> obj_idxs;
-    unsigned int obj_count = model.objects.size();
+    unsigned int obj_count = model.objects.size();      //MJDC get the number of objects in the model NOTE this is the model variable of the playter. Not the model that was created in the load function
+    printf("%u objects\n", obj_count);
 
 #ifdef AUTOPLACEMENT_ON_LOAD
     ModelInstancePtrs new_instances;
@@ -1596,6 +1699,10 @@ std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& mode
         std::string object_name = object->name.empty() ? fs::path(object->input_file).filename().string() : object->name;
         obj_idxs.push_back(obj_count++);
 
+
+        std::cout << std::endl << "LOAD OBJECT " << model_object->name << std::endl;
+        std::cout << "Position: " << model_object->mesh().center().x() << " " << model_object->mesh().center().y() << " " << model_object->mesh().center().z() << std::endl;
+
         if (model_object->instances.empty()) {
 #ifdef AUTOPLACEMENT_ON_LOAD
             object->center_around_origin();
@@ -1604,13 +1711,16 @@ std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& mode
             // if object has no defined position(s) we need to rearrange everything after loading
             // need_arrange = true;
              // add a default instance and center object around origin
+
+            printf("\nLOADMODEL4");
+
             object->center_around_origin();  // also aligns object to Z = 0
             ModelInstance* instance = object->add_instance();
             instance->set_offset(Slic3r::to_3d(this->bed.build_volume().bed_center(), -object->origin_translation(2)));
 #endif /* AUTOPLACEMENT_ON_LOAD */
         }
 
-        for (size_t i = 0; i < object->instances.size() 
+        for (size_t i = 0; i < object->instances.size()                                             //MJDC I think this is just scaling - not relevant
              && !object->is_cut()       // don't apply scaled_down functionality to cut objects
             ; ++i) {
             ModelInstance* instance = object->instances[i];
@@ -1632,7 +1742,8 @@ std::vector<size_t> Plater::priv::load_model_objects(const ModelObjectPtrs& mode
             }
         }
 
-        object->ensure_on_bed(allow_negative_z);
+        if (clamp_z)                                    //MJD
+            object->ensure_on_bed(allow_negative_z);    
     }
 
 #ifdef AUTOPLACEMENT_ON_LOAD
@@ -1964,14 +2075,69 @@ void Plater::priv::mirror(Axis axis)
 
 void Plater::priv::split_object()
 {
+
+    std::cout << std::endl << "***Splitting object***" << std::endl << std::endl; //MJD
+
+    Assembl3r& assembler = Assembl3r::get_instance();       //MJD
+
     int obj_idx = get_selected_object_idx();
     if (obj_idx == -1)
         return;
+
+    //MJD START
+
+    // printf("\nPreSplit\n");
+
+    // for (auto object : model.objects)
+    // {
+    //     printf("\nobject\n");
+    //     printf(object->name.c_str());
+
+    //     for (auto instance : object->instances)
+    //     {
+
+    //         printf("\ninstance\n");
+
+    //     }   
+    // }
     
+    //MJD END
+
+
+    //MJD START
+
+    std::cout << std::endl << "All objects pre split: " << std::endl;
+
+    for (auto modelObject : model.objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+    std::cout << std::endl;
+
+    //MJD END
+
+
     // we clone model object because split_object() adds the split volumes
     // into the same model object, thus causing duplicates when we call load_model_objects()
     Model new_model = model;
     ModelObject* current_model_object = new_model.objects[obj_idx];
+
+    std::cout << "Object to split: " << current_model_object->id().id << " " << current_model_object->name << std::endl;        //MJD
+
+    std::cout << "Volumes: " << std::endl;              //MJD
+
+    for (auto volume : current_model_object->volumes)   //MJD
+    {                                                   //MJD
+        std::cout << "ID: " << volume->id().id << " Name: " << volume->name << std::endl;         //MJD
+    }                                                   //MJD
+
+    std::cout << std::endl; //MJD
 
     // Before splitting object we have to remove all custom supports, seams, and multimaterial painting.
     wxGetApp().plater()->clear_before_change_mesh(obj_idx, _u8L("Custom supports, seams and multimaterial painting were "
@@ -1985,6 +2151,7 @@ void Plater::priv::split_object()
         Slic3r::GUI::warning_catcher(q, _L("The selected object couldn't be split because it contains only one solid part."));
     else
     {
+
         // If we splited object which is contain some parts/modifiers then all non-solid parts (modifiers) were deleted
         if (current_model_object->volumes.size() > 1 && current_model_object->volumes.size() != new_objects.size())
             notification_manager->push_notification(NotificationType::CustomNotification,
@@ -1995,9 +2162,22 @@ void Plater::priv::split_object()
 
         remove(obj_idx);
 
+        //MJD START
+
         // load all model objects at once, otherwise the plate would be rearranged after each one
         // causing original positions not to be kept
-        std::vector<size_t> idxs = load_model_objects(new_objects);
+        std::vector<size_t> idxs = load_model_objects(new_objects, true, true, false);      //MJD
+
+        //Take a snapshot of the model for the assembler //MJD
+        assembler.initial_model = model;
+
+        //Now snap the objects to the bed to be printed //MJD
+        for (auto mod_obj : model.objects)
+        {
+            mod_obj->ensure_on_bed(false); 
+        }
+
+        //MJD END
 
         // clear previosli selection
         get_selection().clear();
@@ -4121,15 +4301,15 @@ void Plater::load_project(const wxString& filename)
 void Plater::add_model(bool imperial_units/* = false*/)
 {
     wxArrayString input_files;
-    wxGetApp().import_model(this, input_files);
+    wxGetApp().import_model(this, input_files);     //MJD This calls up the dialog box where the user selects the input file(s) which are stored in input_files
     if (input_files.empty())
         return;
 
     std::vector<fs::path> paths;
     for (const auto &file : input_files)
-        paths.emplace_back(into_path(file));
+        paths.emplace_back(into_path(file));    //MJD This gets the path of each of the input files and stores them in paths
 
-    wxString snapshot_label;
+    wxString snapshot_label;                    //MJD This section generates the name for the snapshot to be saved before importing (for undo/redo purposes I think)
     assert(! paths.empty());
     if (paths.size() == 1) {
         snapshot_label = _L("Import Object");
@@ -4145,9 +4325,9 @@ void Plater::add_model(bool imperial_units/* = false*/)
         }
     }
 
-    Plater::TakeSnapshot snapshot(this, snapshot_label);
-    if (! load_files(paths, true, false, imperial_units).empty())
-        wxGetApp().mainframe->update_title();
+    Plater::TakeSnapshot snapshot(this, snapshot_label);            //MJD The snapshot is taken here
+    if (! load_files(paths, true, false, imperial_units).empty())   //MJDC files loaded here
+        wxGetApp().mainframe->update_title();                       //MJD Just updates the app window title 
 }
 
 void Plater::import_zip_archive()
@@ -6600,7 +6780,12 @@ static std::string concat_strings(const std::set<std::string> &strings,
 
 void Plater::arrange()
 {
+    printf("ARRANGE1"); //MJD
+
     if (p->can_arrange()) {
+
+        printf("ARRANGE2"); //MJD
+
         auto &w = get_ui_job_worker();
         arrange(w, wxGetKeyState(WXK_SHIFT));
     }
@@ -6608,6 +6793,9 @@ void Plater::arrange()
 
 void Plater::arrange(Worker &w, bool selected)
 {
+
+    printf("ARRANGE3"); //MJD
+
     ArrangeSelectionMode mode = selected ?
                                      ArrangeSelectionMode::SelectionOnly :
                                      ArrangeSelectionMode::Full;

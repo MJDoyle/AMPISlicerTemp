@@ -4730,6 +4730,16 @@ void PrintConfigDef::init_sla_tilt_params()
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionFloats({ 0., 0. }));
 
+    //MJD START
+
+    def = this->add("enable_assembly", coBool);
+    def->label = L("Enable assembly");
+    def->tooltip = L("Generate PnP GCode in addition to FFF GCode.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+    
+    //MJD END
+
 }
 
 

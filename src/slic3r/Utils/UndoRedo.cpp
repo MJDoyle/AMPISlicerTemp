@@ -893,6 +893,10 @@ template<typename T> void StackImpl::load_mutable_object(const Slic3r::ObjectID 
 // Store the current application state onto the Undo / Redo stack, remove all snapshots after m_active_snapshot_time.
 void StackImpl::take_snapshot(const std::string& snapshot_name, const Slic3r::Model& model, const Slic3r::GUI::Selection& selection, const Slic3r::GUI::GLGizmosManager& gizmos, const SnapshotData &snapshot_data)
 {
+	printf("\nTAKE SNAPSHOT\n");
+	printf(snapshot_name.c_str());
+	printf("\n");
+
 	// Release old snapshot data.
 	assert(m_active_snapshot_time <= m_current_time);
 	for (auto &kvp : m_objects)

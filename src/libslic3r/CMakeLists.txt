@@ -627,6 +627,7 @@ target_link_libraries(libslic3r PRIVATE
     qoi
     fastfloat
     int128
+    assembl3r			#MJD
 )
 target_link_libraries(libslic3r PUBLIC
     Eigen3::Eigen

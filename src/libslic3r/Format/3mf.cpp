@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <optional>
 #include <string_view>
+#include <stdio.h>          //MJD
 
 #include <boost/assign.hpp>
 #include <boost/bimap.hpp>
@@ -97,6 +98,9 @@ static constexpr const char *RELATIONSHIP_TAG = "Relationship";
 static constexpr const char* TARGET_ATTR = "Target";
 static constexpr const char* RELS_TYPE_ATTR = "Type";
 
+
+static constexpr const char* COLORGROUP_TAG = "m:colorgroup";       //MJD
+static constexpr const char* COLOR_TAG = "m:color";                 //MJD
 static constexpr const char* MODEL_TAG = "model";
 static constexpr const char* RESOURCES_TAG = "resources";
 static constexpr const char* OBJECT_TAG = "object";
@@ -114,9 +118,11 @@ static constexpr const char* METADATA_TAG = "metadata";
 static constexpr const char* CONFIG_TAG = "config";
 static constexpr const char* VOLUME_TAG = "volume";
 
+static constexpr const char* COLOR_ATTR = "color";      //MJD
 static constexpr const char* UNIT_ATTR = "unit";
 static constexpr const char* NAME_ATTR = "name";
 static constexpr const char* TYPE_ATTR = "type";
+static constexpr const char* PID_ATTR = "pid";          //MJD
 static constexpr const char* ID_ATTR = "id";
 static constexpr const char* X_ATTR = "x";
 static constexpr const char* Y_ATTR = "y";
@@ -395,6 +401,8 @@ namespace Slic3r {
             ModelObject* object;
             ComponentsList components;
 
+            bool internal_part;         //MJD
+
             CurrentObject() { reset(); }
 
             void reset() {
@@ -403,6 +411,7 @@ namespace Slic3r {
                 geometry.reset();
                 object = nullptr;
                 components.clear();
+                internal_part = true;       //MJD
             }
         };
 
@@ -473,6 +482,12 @@ namespace Slic3r {
             CutObjectBase           id;
             std::vector<Connector>  connectors;
         };
+
+        //Current color ID                                      //MJD
+        int m_curr_col_id = -1;
+
+        //Map of colorgroup ID to lists of colours              //MJD
+        std::map<int, std::vector<std::string>> m_colormap;     //MJD
 
         // Map from a 1 based 3MF object ID to a 0 based ModelObject index inside m_model->objects.
         typedef std::map<PathId, int> IdToModelObjectMap;
@@ -571,6 +586,12 @@ namespace Slic3r {
         // handlers to parse the MODEL_CONFIG_FILE file
         void _handle_start_config_xml_element(const char* name, const char** attributes);
         void _handle_end_config_xml_element(const char* name);
+
+        bool _handle_start_colorgroup(const char** attributes, unsigned int num_attributes);        //MJD
+        bool _handle_end_colorgroup();                                                              //MJD
+
+        bool _handle_start_color(const char** attributes, unsigned int num_attributes);        //MJD
+        bool _handle_end_color();                                                              //MJD
 
         bool _handle_start_model(const char** attributes, unsigned int num_attributes);
         bool _handle_end_model();
@@ -712,6 +733,8 @@ namespace Slic3r {
 
     bool _3MF_Importer::_load_model_from_file(const std::string& filename, Model& model, DynamicPrintConfig& config, ConfigSubstitutionContext& config_substitutions)
     {
+        std::cout << std::endl << "***loading .3mf file*** " << filename << std::endl << std::endl;     //MJD
+
         mz_zip_archive archive;
         mz_zip_zero_struct(&archive);
 
@@ -734,6 +757,8 @@ namespace Slic3r {
         m_model_path = MODEL_FILE;
         _extract_relationships_from_archive(archive, stat);
         bool found_model = false;
+
+        //std::cout << "Check1" << std::endl;     //MJD
 
         // we first loop the entries to read from the .model files which are not root
         for (mz_uint i = 0; i < num_entries; ++i) {
@@ -766,11 +791,13 @@ namespace Slic3r {
             }
         }
 
+        //std::cout << "Check2" << std::endl;     //MJD
+
         // Read root model file
         if (start_part_stat.m_file_index < num_entries) {
             try {
                 m_model_path.clear();
-                if (!_extract_model_from_archive(archive, start_part_stat)) {
+                if (!_extract_model_from_archive(archive, start_part_stat)) {           //MJDC here is the important stuff
                     close_zip_reader(&archive);
                     add_error("Archive does not contain a valid model");
                     return false;
@@ -787,6 +814,8 @@ namespace Slic3r {
             add_error("Not valid 3mf. There is missing .model file.");
             return false;
         }
+
+        //std::cout << "Check3" << std::endl;     //MJD
 
         // we then loop again the entries to read other files stored in the archive
         for (mz_uint i = 0; i < num_entries; ++i) {
@@ -836,12 +865,37 @@ namespace Slic3r {
             }
         }
 
+
+        //std::cout << "Check4" << std::endl;     //MJD
+
+        //MJD START
+
+        std::cout << std::endl << "Objects mid .3mf load: " << std::endl;
+
+        for (auto modelObject : m_model->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+
+        //MJD END
+
+
         close_zip_reader(&archive);
 
         if (m_version == 0) {
             // if the 3mf was not produced by PrusaSlicer and there is more than one instance,
             // split the object in as many objects as instances
             size_t curr_models_count = m_model->objects.size();
+
+            //std::cout << std::endl << "Num objects: " << curr_models_count << std::endl;     //MJD
+
             size_t i = 0;
             while (i < curr_models_count) {
                 ModelObject* model_object = m_model->objects[i];
@@ -882,6 +936,24 @@ namespace Slic3r {
                 ++i;
             }
         }
+
+        //MJD START
+
+        std::cout << std::endl << "Objects mid mid .3mf load: " << std::endl;
+
+        for (auto modelObject : m_model->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+
+        //MJD END
 
         for (const IdToModelObjectMap::value_type& object : m_objects) {
             if (object.second >= int(m_model->objects.size())) {
@@ -1008,6 +1080,24 @@ namespace Slic3r {
             throw Slic3r::RuntimeError(msg);
         }
 
+        //MJD START
+
+        std::cout << std::endl << "Objects post .3mf load: " << std::endl;
+
+        for (auto modelObject : m_model->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+
+        //MJD END
+
         return true;
     }
 
@@ -1060,6 +1150,9 @@ namespace Slic3r {
 
     bool _3MF_Importer::_extract_model_from_archive(mz_zip_archive& archive, const mz_zip_archive_file_stat& stat)
     {
+        std::cout << "Extracting model from archive" << std::endl; //MJD
+
+
         if (stat.m_uncomp_size == 0) {
             add_error("Found invalid size");
             return false;
@@ -1092,13 +1185,20 @@ namespace Slic3r {
 
         try
         {
+            std::cout << "Extract1" << std::endl; //MJD
+
             res = mz_zip_reader_extract_to_callback(&archive, stat.m_file_index, [](void* pOpaque, mz_uint64 file_ofs, const void* pBuf, size_t n)->size_t {
                 CallbackData* data = (CallbackData*)pOpaque;
+
+                std::cout << "Extract2" << std::endl; //MJD
+
                 if (!XML_Parse(data->parser, (const char*)pBuf, (int)n, (file_ofs + n == data->stat.m_uncomp_size) ? 1 : 0) || data->importer.parse_error()) {
                     char error_buf[1024];
                     ::sprintf(error_buf, "Error (%s) while parsing '%s' at line %d", data->importer.parse_error_message(), data->stat.m_filename, (int)XML_GetCurrentLineNumber(data->parser));
                     throw Slic3r::FileIOError(error_buf);
                 }
+
+                std::cout << "Extract3" << std::endl; //MJD
 
                 return n;
                 }, &data, 0);
@@ -1113,6 +1213,24 @@ namespace Slic3r {
             add_error(e.what());
             return false;
         }
+
+        //MJD START
+
+        std::cout << std::endl << "All objects post extraction: " << std::endl;
+
+        for (auto modelObject : m_model->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+
+        //MJD END
 
         if (res == 0) {
             add_error("Error while extracting model data from ZIP archive");
@@ -1657,8 +1775,15 @@ namespace Slic3r {
         bool res = true;
         unsigned int num_attributes = (unsigned int)XML_GetSpecifiedAttributeCount(m_xml_parser);
 
+
+        //std::cout << "Handling: " << name << " NUM: " << num_attributes << std::endl;
+
         if (::strcmp(MODEL_TAG, name) == 0)
             res = _handle_start_model(attributes, num_attributes);
+        else if (::strcmp(COLORGROUP_TAG, name) == 0)                       //MJD
+            res = _handle_start_colorgroup(attributes, num_attributes);     //MJD
+        else if (::strcmp(COLOR_TAG, name) == 0)                       //MJD
+            res = _handle_start_color(attributes, num_attributes);     //MJD
         else if (::strcmp(RESOURCES_TAG, name) == 0)
             res = _handle_start_resources(attributes, num_attributes);
         else if (::strcmp(OBJECT_TAG, name) == 0)
@@ -1697,6 +1822,10 @@ namespace Slic3r {
 
         if (::strcmp(MODEL_TAG, name) == 0)
             res = _handle_end_model();
+        else if (::strcmp(COLORGROUP_TAG, name) == 0)   //MJD
+            res = _handle_end_colorgroup();             //MJD
+        else if (::strcmp(COLOR_TAG, name) == 0)        //MJD
+            res = _handle_end_color();                  //MJD
         else if (::strcmp(RESOURCES_TAG, name) == 0)
             res = _handle_end_resources();
         else if (::strcmp(OBJECT_TAG, name) == 0)
@@ -1833,6 +1962,9 @@ namespace Slic3r {
 
     bool _3MF_Importer::_handle_start_object(const char** attributes, unsigned int num_attributes)
     {
+
+        std::cout << "Handle start object" << std::endl; //MJD
+
         // reset current data
         m_curr_object.reset();
 
@@ -1851,6 +1983,48 @@ namespace Slic3r {
                 m_curr_object.object->name = m_name + "_" + std::to_string(m_model->objects.size());
 
             m_curr_object.id = get_attribute_value_int(attributes, num_attributes, ID_ATTR);
+
+            //MJD START
+
+            //set object internal/external                         
+
+            int pid = get_attribute_value_int(attributes, num_attributes, PID_ATTR);        
+
+            if (m_colormap.count(pid))
+            {
+                if (m_colormap[pid].size() == 1)
+                {
+                    if (m_colormap[pid][0] == "#A0A0A0FF")
+                    {
+                        m_curr_object.internal_part = true;
+
+                        m_curr_object.object->internal = true;
+
+                        //m_curr_object.object->volumes[0]->internal = true;
+
+                        std::cout << "INTERNAL PART" << std::endl;
+                    }
+
+
+                    else
+                    {
+                        m_curr_object.internal_part = false;
+
+                        m_curr_object.object->internal = false;
+
+                        //m_curr_object.object->volumes[0]->internal = false;
+
+                        std::cout << "EXTERNAL PART" << std::endl;
+                    }
+                }
+            }
+
+            else
+                std::cout << "Error: pid value not found in colormap" << std::endl;
+
+
+            //MJD END
+
         }
 
         return true;
@@ -1897,6 +2071,52 @@ namespace Slic3r {
 
         return true;
     }
+
+    //START MJD
+
+    bool _3MF_Importer::_handle_start_colorgroup(const char** attributes, unsigned int num_attributes)
+    {
+        int color_id = get_attribute_value_int(attributes, num_attributes, ID_ATTR);
+
+        std::cout << "COLOR_ID: " << color_id << std::endl;
+
+        if (m_colormap.count(color_id))
+            std::cout << "Color ID already exists" << std::endl;
+
+        m_curr_col_id = color_id;
+
+        m_colormap[color_id] = std::vector<std::string>();
+
+        // do nothing
+        return true;
+    }
+
+    bool _3MF_Importer::_handle_end_colorgroup()
+    {
+        // do nothing
+        return true;
+    }
+
+    bool _3MF_Importer::_handle_start_color(const char** attributes, unsigned int num_attributes)
+    {
+        std::string color_value = get_attribute_value_string(attributes, num_attributes, COLOR_ATTR);
+
+        if (!m_colormap.count(m_curr_col_id))
+            std::cout << "Error: current color ID not in color map" << std::endl;
+
+        m_colormap[m_curr_col_id].push_back(color_value); 
+
+        // do nothing
+        return true;
+    }
+
+    bool _3MF_Importer::_handle_end_color()
+    {
+        // do nothing
+        return true;
+    }
+
+    //END MJD
 
     bool _3MF_Importer::_handle_start_mesh(const char** attributes, unsigned int num_attributes)
     {
@@ -2472,6 +2692,16 @@ namespace Slic3r {
                 triangle_mesh.flip_triangles();
 
 			ModelVolume* volume = object.add_volume(std::move(triangle_mesh));
+
+            // if (object.internal)                        //MJD
+            //     volume->internal = true;                //MJD
+            
+            // else                                        //MJD
+            //     volume->internal = false;               //MJD
+
+            // object.internal = true;                     //MJD
+
+
             // stores the volume matrix taken from the metadata, if present
             if (has_transform)
                 volume->source.transform = Slic3r::Geometry::Transformation(volume_matrix_to_object);
@@ -2532,12 +2762,12 @@ namespace Slic3r {
             }
 
             // this may happen for 3mf saved by 3rd part softwares
-            if (volume->name.empty()) {
+            //if (volume->name.empty()) {                                   //MJD
                 volume->name = object.name;
                 if (renamed_volumes_count > 0)
                     volume->name += "_" + std::to_string(renamed_volumes_count + 1);
                 ++renamed_volumes_count;
-            }
+            //}                                                             //MJD
         }
 
         return true;
@@ -2545,6 +2775,8 @@ namespace Slic3r {
 
     void XMLCALL _3MF_Importer::_handle_start_model_xml_element(void* userData, const char* name, const char** attributes)
     {
+        //std::cout << "Handling start model element" << std::endl; //MJD
+
         _3MF_Importer* importer = (_3MF_Importer*)userData;
         if (importer != nullptr)
             importer->_handle_start_model_xml_element(name, attributes);

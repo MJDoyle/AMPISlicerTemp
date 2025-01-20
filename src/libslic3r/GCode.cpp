@@ -46,6 +46,7 @@
 #include "libslic3r.h"
 #include "LocalesUtils.hpp"
 #include "format.hpp"
+#include "assembl3r/Assembler.hpp"          //MJD
 
 #include <algorithm>
 #include <cstdlib>
@@ -54,6 +55,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <sstream>
+#include <iomanip>
+#include <iostream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/find.hpp>
@@ -1247,10 +1251,10 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
     GCode::SmoothPathCache smooth_path_cache_global = smooth_path_interpolate_global(print);
 
     // Do all objects for each layer.
-    if (print.config().complete_objects.value) {
+    if (print.config().complete_objects.value) {        //MJDC Print each object one by one
         size_t finished_objects = 0;
         const PrintObject *prev_object = (*print_object_instance_sequential_active)->print_object;
-        for (; print_object_instance_sequential_active != print_object_instances_ordering.end(); ++ print_object_instance_sequential_active) {
+        for (; print_object_instance_sequential_active != print_object_instances_ordering.end(); ++ print_object_instance_sequential_active) {  //MJDC iterate through objects
             const PrintObject &object = *(*print_object_instance_sequential_active)->print_object;
             if (&object != prev_object || tool_ordering.first_extruder() != final_extruder_id) {
                 tool_ordering = ToolOrdering(object, final_extruder_id);
@@ -1263,7 +1267,18 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
                 assert(final_extruder_id != (unsigned int)-1);
             }
             print.throw_if_canceled();
-            this->set_origin(unscale((*print_object_instance_sequential_active)->shift));
+            this->set_origin(unscale((*print_object_instance_sequential_active)->shift));       //MJDC so I think the shift is relative to the model or something, not the build plate
+
+            //MJD START
+
+            printf("\nPrint object shift\n");
+
+            printf("%g, %g\n", (*print_object_instance_sequential_active)->shift.x(), (*print_object_instance_sequential_active)->shift.y());
+            printf("%f, %f\n", (*print_object_instance_sequential_active)->shift.x(), (*print_object_instance_sequential_active)->shift.y());
+            printf("%d, %d\n", (*print_object_instance_sequential_active)->shift.x(), (*print_object_instance_sequential_active)->shift.y());
+
+            //MJD END
+
             if (finished_objects > 0) {
                 // Move to the origin position for the copy we're going to print.
                 // This happens before Z goes down to layer 0 again, so that no collision happens hopefully.
@@ -1304,7 +1319,9 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
         }
 
         file.write(m_label_objects.maybe_stop_instance());
-    } else {
+    } 
+    
+    else {                      //MJDC Print all objects simultaneously, layer by layer
         // Sort layers by Z.
         // All extrusion moves with the same top layer height are extruded uninterrupted.
         std::vector<std::pair<coordf_t, ObjectsLayerToPrint>> layers_to_print = collect_layers_to_print(print);
@@ -1367,10 +1384,27 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
     }
 
     // Write end commands to file.
+
     file.write(this->retract_and_wipe());
     file.write(m_writer.set_fan(0));    //MJD - Default: M107
 
-    file.writeln(std::string("; here are some PnP commands that I generated algorithmically"));
+
+    //MJD START
+
+    //If the assembly config option is enabled
+    if (print.full_print_config().option<ConfigOptionBool>("enable_assembly")->value)
+    {
+        Assembl3r& assembler = Assembl3r::get_instance();
+
+        //std::vector<std::string> additions = assembler.test_pnp(print);
+
+        std::vector<std::string> additions = assembler.simple_layer_assembly(print);
+
+        for (std::string addition : additions)
+            file.writeln(addition);
+    }
+
+    //MJD END
 
     // adds tag for processor
     file.write_format(";%s%s\n", GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Role).c_str(), gcode_extrusion_role_to_string(GCodeExtrusionRole::Custom).c_str());
@@ -1667,6 +1701,35 @@ void GCodeGenerator::process_layers(
     tbb::filter<LayerResult, std::string> pipeline_to_string = cooling;
     if (m_find_replace)
         pipeline_to_string = pipeline_to_string & find_replace;
+
+
+    /* MJDC so we create a pipeline that in its most basic form looks like smooth_path_interpolator -> generator -> cooling -> output
+    
+    This corresponds with:
+
+
+
+        size_t layer_to_print_idx = 0;
+
+
+
+        size_t idx = layer_to_print_idx ++;
+        GCode::SmoothPathCache smooth_path_cache;
+        GCodeGenerator::smooth_path_interpolate(layers_to_print[idx], interpolation_params, smooth_path_cache);
+        return { idx, std::move(smooth_path_cache) };
+
+
+        ObjectLayerToPrint &layer = layers_to_print[layer_to_print_idx];
+                
+        LayerResult lr = this->process_layer(print, { std::move(layer) }, tool_ordering.tools_for_layer(layer.print_z()), 
+                    GCode::SmoothPathCaches{ smooth_path_cache_global, in.second }, 
+                    &layer == &layers_to_print.back(), nullptr, single_object_idx);
+
+        string s = cooling_buffer->process_layer(std::move(lr.gcode), lr.layer_id, lr.cooling_buffer_flush)
+
+        output_stream.write(s);
+    */
+
 
     // It registers a handler that sets locales to "C" before any TBB thread starts participating in tbb::parallel_pipeline.
     // Handler is unregistered when the destructor is called.
@@ -2326,7 +2389,24 @@ struct SmoothPathGenerator {
         } else if (auto path = dynamic_cast<const ExtrusionPath *>(extrusion_entity)) {
             result = GCode::SmoothPath{GCode::SmoothPathElement{path->attributes(), smooth_path_caches.layer_local().resolve_or_fit(*path, extrusion_reference.flipped(), scaled_resolution)}};
         }
+
+        //printf("\nsmooth path:\n");     //MJD
+
         for (auto it{result.rbegin()}; it != result.rend(); ++it) {
+
+            //MJD START
+
+            
+            //for (auto it2{it->path.rbegin()}; it2 != it->path.rend(); it2++)
+            //{
+            //    printf(typeid(it2->point.x()).name());
+
+
+            //    printf("\n%d,  %d\n", it2->point.x(), it2->point.y());
+            //}
+
+            //MJD END
+
             if (!it->path.empty()) {
                 previous_position = InstancePoint{it->path.back().point};
                 break;
@@ -2476,7 +2556,7 @@ LayerResult GCodeGenerator::process_layer(
     assert(is_decimal_separator_point()); // for the sprintfs
 
     // add tag for processor
-    gcode += ";" + GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Layer_Change) + "\n";
+    gcode += ";" + GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Layer_Change) + "\n";        //MJDC ";LAYER_CHANGE"
     // export layer z
     gcode += std::string(";Z:") + float_to_string_decimal_point(print_z) + "\n";
 
@@ -3118,6 +3198,14 @@ std::string GCodeGenerator::travel_to_first_position(const Vec3crd& point, const
     }
 
     this->m_moved_to_first_layer_point = true;
+
+    //START MJD
+
+    //printf("\ntravel_to_first_position\n");
+    //printf(gcode.c_str());
+
+    //END MJD
+
     return gcode;
 }
 

@@ -215,6 +215,7 @@ private:
         GCodeFindReplace *m_find_replace_backup { nullptr };
         GCodeProcessor   &m_processor;
     };
+
     void            _do_export(Print &print, GCodeOutputStream &file, ThumbnailsGeneratorCallback thumbnail_cb);
 
     static ObjectsLayerToPrint         		                     collect_layers_to_print(const PrintObject &object);
