@@ -43,6 +43,34 @@ class Plater;
 class BitmapComboBox;
 #endif
 
+//MJD START
+
+class ViewAssembly : public wxPanel
+{
+    wxGLCanvas* m_canvas_widget;
+    GLCanvas3D* m_canvas;
+
+
+    public:
+
+        ViewAssembly(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process);
+        virtual ~ViewAssembly();
+
+        GLCanvas3D* get_canvas3d() { return m_canvas; }
+
+        void set_as_dirty();
+
+        void reload_scene(bool refresh_immediately, bool force_full_scene_refresh = false);
+        void render();
+        void select_view(const std::string& direction);
+
+    private:
+
+        bool init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process);
+};
+
+//MJD END
+
 class View3D : public wxPanel
 {
     wxGLCanvas* m_canvas_widget;

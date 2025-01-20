@@ -49,6 +49,92 @@
 namespace Slic3r {
 namespace GUI {
 
+
+
+//MJD START
+
+
+ViewAssembly::ViewAssembly(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process)
+{
+    init(parent, bed, model, config, process);
+}
+
+ViewAssembly::~ViewAssembly()
+{
+    delete m_canvas;
+    delete m_canvas_widget;
+}
+
+bool ViewAssembly::init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process)
+{
+    if (!Create(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0 /* disable wxTAB_TRAVERSAL */))
+        return false;
+
+    const GUI_InitParams* const init_params = wxGetApp().init_params;
+    m_canvas_widget = OpenGLManager::create_wxglcanvas(*this, (init_params != nullptr) ? init_params->opengl_aa : false);
+    if (m_canvas_widget == nullptr)
+        return false;
+
+    m_canvas = new GLCanvas3D(m_canvas_widget, bed);
+    m_canvas->set_context(wxGetApp().init_glcontext(*m_canvas_widget));
+
+    m_canvas->allow_multisample(OpenGLManager::can_multisample());
+
+    m_canvas->enable_picking(true);
+    m_canvas->get_selection().set_mode(Selection::Instance);
+    m_canvas->enable_moving(true);
+    // XXX: more config from 3D.pm
+    m_canvas->set_model(model);
+    m_canvas->set_process(process);
+    m_canvas->set_config(config);
+    //m_canvas->enable_gizmos(true);
+    m_canvas->enable_selection(true);
+    //m_canvas->enable_main_toolbar(true);
+    //m_canvas->enable_undoredo_toolbar(true);
+    m_canvas->enable_labels(true);
+    m_canvas->enable_slope(true);
+
+    wxBoxSizer* main_sizer = new wxBoxSizer(wxVERTICAL);
+    main_sizer->Add(m_canvas_widget, 1, wxALL | wxEXPAND, 0);
+
+    SetSizer(main_sizer);
+    SetMinSize(GetSize());
+    GetSizer()->SetSizeHints(this);
+
+    return true;
+}
+
+void ViewAssembly::set_as_dirty()
+{
+    if (m_canvas != nullptr)
+        m_canvas->set_as_dirty();
+}
+
+void ViewAssembly::reload_scene(bool refresh_immediately, bool force_full_scene_refresh)
+{
+    if (m_canvas != nullptr)
+        m_canvas->reload_scene(refresh_immediately, force_full_scene_refresh);
+}
+    
+void ViewAssembly::render()
+{
+    if (m_canvas != nullptr)
+        //m_canvas->render();
+        m_canvas->set_as_dirty();
+}
+
+void ViewAssembly::select_view(const std::string& direction)
+{
+    if (m_canvas != nullptr)
+        m_canvas->select_view(direction);
+}
+
+//MJD END
+
+
+
+
+
 View3D::View3D(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process)
     : m_canvas_widget(nullptr)
     , m_canvas(nullptr)

@@ -271,6 +271,7 @@ struct Plater::priv
 #endif // ENABLE_ENVIRONMENT_MAP
     Mouse3DController mouse3d_controller;
     View3D* view3D;
+    ViewAssembly* viewAssembly;
     GLToolbar view_toolbar;
     GLToolbar collapse_toolbar;
     Preview *preview;
@@ -655,6 +656,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     sla_print.set_status_callback(statuscb);
     this->q->Bind(EVT_SLICING_UPDATE, &priv::on_slicing_update, this);
 
+    viewAssembly = new ViewAssembly(q, bed, &((Assembl3r::get_instance()).initial_model), config, &background_process);     //MJD
     view3D = new View3D(q, bed, &model, config, &background_process);
     preview = new Preview(q, bed, &model, config, &background_process, &gcode_result, [this]() { schedule_background_process(); });
 
@@ -663,6 +665,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
 
     panels.push_back(view3D);
     panels.push_back(preview);
+    panels.push_back(viewAssembly);
 
     this->background_process_timer.SetOwner(this->q, 0);
     this->q->Bind(wxEVT_TIMER, [this](wxTimerEvent &evt)
@@ -677,6 +680,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     panel_sizer = new wxBoxSizer(wxHORIZONTAL);
     panel_sizer->Add(view3D, 1, wxEXPAND | wxALL, 0);
     panel_sizer->Add(preview, 1, wxEXPAND | wxALL, 0);
+    panel_sizer->Add(viewAssembly, 1, wxEXPAND | wxALL, 0);
     hsizer->Add(panel_sizer, 1, wxEXPAND | wxALL, 0);
     hsizer->Add(sidebar, 0, wxEXPAND | wxLEFT | wxRIGHT, 0);
     q->SetSizer(hsizer);
@@ -759,6 +763,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         q->Bind(EVT_EXPORT_BEGAN, &priv::on_export_began, this);
         q->Bind(EVT_GLVIEWTOOLBAR_3D, [q](SimpleEvent&) { q->select_view_3D("3D"); });
         q->Bind(EVT_GLVIEWTOOLBAR_PREVIEW, [q](SimpleEvent&) { q->select_view_3D("Preview"); });
+        q->Bind(EVT_GLVIEWTOOLBAR_ASSEMBLY, [q](SimpleEvent&) { std::cout << "EVENT: " << "ASSEMBLY" << std::endl; q->select_view_3D("Assembly"); });          //MJD
     }
 
     // Drop target:
@@ -1072,6 +1077,7 @@ void Plater::priv::update(unsigned int flags)
         // pulls the correct data.
         update_status = this->update_background_process(false, flags & (unsigned int)UpdateParams::POSTPONE_VALIDATION_ERROR_MESSAGE);
     this->view3D->reload_scene(false, flags & (unsigned int)UpdateParams::FORCE_FULL_SCREEN_REFRESH);
+    this->viewAssembly->reload_scene(false, flags & (unsigned int)UpdateParams::FORCE_FULL_SCREEN_REFRESH);           //MJD
     this->preview->reload_print();
     if (force_background_processing_restart)
         this->restart_background_process(update_status);
@@ -1088,6 +1094,8 @@ void Plater::priv::select_view(const std::string& direction)
         view3D->select_view(direction);
     else if (current_panel == preview)
         preview->select_view(direction);
+    else if (current_panel == viewAssembly)     //MJD
+        viewAssembly->select_view(direction);   //MJD
 }
 
 void Plater::priv::apply_free_camera_correction(bool apply/* = true*/)
@@ -1099,10 +1107,15 @@ void Plater::priv::apply_free_camera_correction(bool apply/* = true*/)
 
 void Plater::priv::select_view_3D(const std::string& name)
 {
+    std::cout << "SELECT VIEW: " << name << std::endl;  //MJD
+
     if (name == "3D")
         set_current_panel(view3D);
     else if (name == "Preview")
         set_current_panel(preview);
+    else if (name == "Assembly")       //MJD
+        set_current_panel(viewAssembly);    //MJD
+
 
     apply_free_camera_correction(false);
 }
@@ -1112,7 +1125,9 @@ void Plater::priv::select_next_view_3D()
     if (current_panel == view3D)
         set_current_panel(preview);
     else if (current_panel == preview)
-        set_current_panel(view3D);
+        set_current_panel(viewAssembly);        //MJD
+    else if (current_panel == viewAssembly)     //MJD
+        set_current_panel(view3D);              //MJD
 }
 
 void Plater::priv::collapse_sidebar(bool collapse)
@@ -2993,7 +3008,28 @@ void Plater::priv::set_current_panel(wxPanel* panel)
 
     panel_sizer->Layout();
 
-    if (current_panel == view3D) {
+    //MJD START
+
+    if (current_panel == viewAssembly) {
+        if (old_panel == preview)
+            preview->get_canvas3d()->unbind_event_handlers();
+
+        else if (old_panel == view3D)
+            view3D->get_canvas3d()->unbind_event_handlers();
+        
+        viewAssembly->get_canvas3d()->bind_event_handlers();
+
+        viewAssembly->set_as_dirty();
+        
+        view_toolbar.select_item("Assembly");   //TODO not sure if this is correct
+
+    }
+
+    //MJD END
+
+
+
+    else if (current_panel == view3D) {
         if (old_panel == preview)
             preview->get_canvas3d()->unbind_event_handlers();
 
@@ -3600,6 +3636,18 @@ bool Plater::priv::init_view_toolbar()
     item.left.action_callback = [this]() { if (this->q != nullptr) wxPostEvent(this->q, SimpleEvent(EVT_GLVIEWTOOLBAR_PREVIEW)); };
     if (!view_toolbar.add_item(item))
         return false;
+
+    //MJD START
+
+    item.name = "Assembly";
+    item.icon_filename = "preview.svg";
+    item.tooltip = _u8L("Assembly View");
+    item.sprite_id = sprite_id++;
+    item.left.action_callback = [this]() { if (this->q != nullptr) wxPostEvent(this->q, SimpleEvent(EVT_GLVIEWTOOLBAR_ASSEMBLY)); };
+    if (!view_toolbar.add_item(item))
+        return false;
+
+    //MJD END
 
     if (!view_toolbar.generate_icons_texture())
         return false;
