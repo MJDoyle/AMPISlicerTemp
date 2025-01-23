@@ -499,11 +499,13 @@ void Model::convert_multipart_object(unsigned int max_extruders)
             // Revert the centering operation.
             trafo_volume.set_offset(trafo_volume.get_offset() - o->origin_translation);
             int counter = 1;
-            auto copy_volume = [o, max_extruders, &counter, &extruder_counter](ModelVolume *new_v) {
+            auto copy_volume = [o, v, max_extruders, &counter, &extruder_counter](ModelVolume *new_v) {     //MJD
                 assert(new_v != nullptr);
-                new_v->name = (counter > 1) ? o->name + "_" + std::to_string(counter++) : o->name;
+
+                new_v->name = v->name;                                                                      //MJD
+                //new_v->name = (counter > 1) ? o->name + "_" + std::to_string(counter++) : o->name;        //MJD
                 new_v->internal = o->internal;                                                              //MJD
-                new_v->config.set("extruder", auto_extruder_id(max_extruders, extruder_counter));
+                //new_v->config.set("extruder", auto_extruder_id(max_extruders, extruder_counter));           //MJD
                 return new_v;
             };
             if (o->instances.empty()) {
@@ -1791,6 +1793,7 @@ int ModelVolume::extruder_id() const
         const ConfigOption *opt = this->config.option("extruder");
         if ((opt == nullptr) || (opt->getInt() == 0))
             opt = this->object->config.option("extruder");
+
         extruder_id = (opt == nullptr) ? 0 : opt->getInt();
     }
     return extruder_id;

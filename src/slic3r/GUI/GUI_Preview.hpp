@@ -10,6 +10,7 @@
 #include "libslic3r/Point.hpp"
 #include "libslic3r/CustomGCode.hpp"
 
+#include <stdio.h>          //MJD
 #include <string>
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 
@@ -61,6 +62,7 @@ class ViewAssembly : public wxPanel
         void set_as_dirty();
 
         void reload_scene(bool refresh_immediately, bool force_full_scene_refresh = false);
+        void init_scene();
         void render();
         void select_view(const std::string& direction);
 

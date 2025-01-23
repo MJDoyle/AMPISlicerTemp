@@ -1362,6 +1362,9 @@ wxWindow* GLCanvas3D::get_wxglcanvas_parent()
 
 bool GLCanvas3D::init()
 {
+    if (m_assembly_view)                //MJD
+        std::cout << "Assembly view canvas init" << std::endl;      //MJD
+
     if (m_initialized)
         return true;
 
@@ -1398,6 +1401,14 @@ bool GLCanvas3D::init()
         return false;
 
     m_initialized = true;
+
+    if (m_assembly_view)            //MJD
+    {                   //MJD
+        std::cout << "Assembly view canvas init complete" << std::endl;             //MJD
+
+        std::cout << "Volumes: " << m_volumes.empty() << std::endl; //MJD
+
+    }                       //MJD
 
     return true;
 }
@@ -1750,6 +1761,8 @@ void GLCanvas3D::update_volumes_colors_by_extruder()
 
 void GLCanvas3D::render()
 {
+    //std::cout << "RENDER ONE" << std::endl;   MJD
+
     if (m_in_render) {
         // if called recursively, return
         m_dirty = true;
@@ -1833,6 +1846,8 @@ void GLCanvas3D::render()
     // draw scene
     glsafe(::glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
     _render_background();
+
+    //std::cout << "RENDER TWO" << std::endl;               MJD
 
     _render_objects(GLVolumeCollection::ERenderType::Opaque);
     _render_sla_slices();
@@ -2042,6 +2057,10 @@ void GLCanvas3D::set_toolpaths_z_range(const std::array<unsigned int, 2>& range)
 
 std::vector<int> GLCanvas3D::load_object(const ModelObject& model_object, int obj_idx, std::vector<int> instance_idxs)
 {
+    if (m_assembly_view)                                //MJD
+        std::cout << "load object 1" << std::endl;      //MJD
+
+
     if (instance_idxs.empty()) {
         for (unsigned int i = 0; i < model_object.instances.size(); ++i) {
             instance_idxs.emplace_back(i);
@@ -2052,6 +2071,9 @@ std::vector<int> GLCanvas3D::load_object(const ModelObject& model_object, int ob
 
 std::vector<int> GLCanvas3D::load_object(const Model& model, int obj_idx)
 {
+    if (m_assembly_view)                                //MJD
+        std::cout << "load object 1" << std::endl;      //MJD
+
     if (0 <= obj_idx && obj_idx < (int)model.objects.size()) {
         const ModelObject* model_object = model.objects[obj_idx];
         if (model_object != nullptr)
@@ -2086,11 +2108,42 @@ void GLCanvas3D::mirror_selection(Axis axis)
 // 5) Out of bed collision status & message overlay (texture)
 void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_refresh)
 {
+    if (m_assembly_view)        //MJD
+        std::cout << "Assembly view reload scene" << std::endl;
+
+
     if (m_canvas == nullptr || m_config == nullptr || m_model == nullptr)
         return;
 
+    if (m_assembly_view)        //MJD
+        std::cout << "Assembly view reload scene 2" << std::endl;
+
     if (!m_initialized)
         return;
+
+    //MJD START
+
+    if (m_assembly_view)
+    {
+
+        std::cout << std::endl << "Objects at assembly view reload: " << std::endl;
+
+        for (auto modelObject : m_model->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+
+    }
+
+
+    //MJD END
     
     _set_current();
 
@@ -5838,8 +5891,14 @@ void GLCanvas3D::_render_bed_for_picking(const Transform3d& view_matrix, const T
 
 void GLCanvas3D::_render_objects(GLVolumeCollection::ERenderType type)
 {
+    //if (m_assembly_view)                                    //MJD
+        //std::cout << "Rendering objects" << std::endl;      //MJD
+
     if (m_volumes.empty())
         return;
+
+    //if (m_assembly_view)                        //MJD
+    //    std::cout << "Volumes not empty" << std::endl;      //MJD
 
     glsafe(::glEnable(GL_DEPTH_TEST));
 

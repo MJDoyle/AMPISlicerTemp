@@ -56,6 +56,21 @@ namespace GUI {
 
 ViewAssembly::ViewAssembly(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process)
 {
+    std::cout << std::endl << "***View assembly created***" << std::endl << std::endl;
+
+
+    std::cout << "View assembly model" << std::endl;
+
+    for (auto modelObject : model->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
     init(parent, bed, model, config, process);
 }
 
@@ -91,6 +106,7 @@ bool ViewAssembly::init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrint
     m_canvas->enable_selection(true);
     //m_canvas->enable_main_toolbar(true);
     //m_canvas->enable_undoredo_toolbar(true);
+    m_canvas->set_assembly_view(true);
     m_canvas->enable_labels(true);
     m_canvas->enable_slope(true);
 
@@ -104,14 +120,40 @@ bool ViewAssembly::init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrint
     return true;
 }
 
+void ViewAssembly::init_scene()
+{
+    if (m_canvas == nullptr)
+        return;
+
+    m_canvas->init();
+}
+
 void ViewAssembly::set_as_dirty()
 {
     if (m_canvas != nullptr)
+    {
+        std::cout << "Assembly canvas set as dirty" << std::endl;
+
+        std::cout << "View assembly model" << std::endl;
+
+        for (auto modelObject : m_canvas->get_model()->objects)
+        {
+            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+            }
+        }
+
         m_canvas->set_as_dirty();
+    }
 }
 
 void ViewAssembly::reload_scene(bool refresh_immediately, bool force_full_scene_refresh)
 {
+    std::cout << "VIEW ASSEMBLY RELOAD SCENE" << std::endl;
+
     if (m_canvas != nullptr)
         m_canvas->reload_scene(refresh_immediately, force_full_scene_refresh);
 }

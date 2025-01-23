@@ -466,6 +466,10 @@ int GLVolumeCollection::load_object_volume(
     int                volume_idx,
     int                instance_idx)
 {
+    //std::cout << std::endl << "***Loading object volume***" << std::endl; //MJD
+
+    //std::cout << "ID: " << model_object->volumes[volume_idx]->id().id << std::endl;
+
     const ModelVolume   *model_volume = model_object->volumes[volume_idx];
     const int            extruder_id  = model_volume->extruder_id();
     const ModelInstance *instance 	  = model_object->instances[instance_idx];

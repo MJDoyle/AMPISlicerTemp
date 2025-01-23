@@ -22,6 +22,7 @@
 #include <optional>
 #include <string_view>
 #include <stdio.h>          //MJD
+#include <string>           //MJD
 
 #include <boost/assign.hpp>
 #include <boost/bimap.hpp>
@@ -1081,6 +1082,27 @@ namespace Slic3r {
         }
 
         //MJD START
+
+        //Name volumes
+        int partNumber = 0;
+
+        for (auto modelObject : m_model->objects)
+        {
+            for (auto modelVolume : modelObject->volumes)
+            {
+                std::string name = "Part_" + std::to_string(partNumber) + "_";
+
+                if (modelObject->internal)
+                    name += "internal";
+
+                else
+                    name += "external";
+
+                modelVolume->name = name;
+
+                partNumber ++;
+            }
+        }
 
         std::cout << std::endl << "Objects post .3mf load: " << std::endl;
 
@@ -2763,11 +2785,19 @@ namespace Slic3r {
 
             // this may happen for 3mf saved by 3rd part softwares
             //if (volume->name.empty()) {                                   //MJD
-                volume->name = object.name;
-                if (renamed_volumes_count > 0)
-                    volume->name += "_" + std::to_string(renamed_volumes_count + 1);
-                ++renamed_volumes_count;
+            volume->name = object.name;
+            if (renamed_volumes_count > 0)
+            {           //MJD
+                std::string volumeName = volume->name + "_" + std::to_string(renamed_volumes_count + 1);        //MJD
+
+                std::cout << "new volume name: " << volumeName << std::endl;
+
+                volume->name += "_" + std::to_string(renamed_volumes_count + 1);
+            }           //MJD
+            ++renamed_volumes_count;
             //}                                                             //MJD
+
+            //std::cout << "Vol ID: " << volume->config.option("extruder")->getInt() << std::endl;
         }
 
         return true;

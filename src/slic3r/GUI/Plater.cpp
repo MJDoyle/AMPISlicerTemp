@@ -3019,8 +3019,12 @@ void Plater::priv::set_current_panel(wxPanel* panel)
         
         viewAssembly->get_canvas3d()->bind_event_handlers();
 
+        viewAssembly->init_scene();
+
+        viewAssembly->reload_scene(true, true); // Not completely sure why we have to do this or above line here but it seem to work
+
         viewAssembly->set_as_dirty();
-        
+
         view_toolbar.select_item("Assembly");   //TODO not sure if this is correct
 
     }

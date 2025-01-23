@@ -562,6 +562,8 @@ private:
     bool m_tooltip_enabled{ true };
     Slope m_slope;
 
+    bool m_assembly_view{ false };
+
     class SLAView
     {
     public:
@@ -807,6 +809,8 @@ public:
     void enable_labels(bool enable) { m_labels.enable(enable); }
     void enable_slope(bool enable) { m_slope.enable(enable); }
     void allow_multisample(bool allow) { m_multisample_allowed = allow; }
+
+    void set_assembly_view(bool assembly_view) { m_assembly_view = assembly_view; }         //MJD
 
     void zoom_to_bed();
     void zoom_to_volumes();
