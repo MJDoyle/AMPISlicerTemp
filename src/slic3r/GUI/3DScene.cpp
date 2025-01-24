@@ -287,6 +287,27 @@ void GLVolume::set_render_color(bool force_transparent)
             set_render_color(DISABLED_COLOR);
         else if (outside && shader_outside_printer_detection_enabled)
             set_render_color(OUTSIDE_COLOR);
+
+        //MJD START
+
+        else if (!internal)
+            set_render_color(ColorRGBA(0.7f, 0.6f, 0.6f, 1.0f));
+
+        
+
+        //ColorRGBA color_to_set = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+
+        //if (volume.first->internal)
+        //    color_to_set = ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f);
+
+        //else
+        //    color_to_set = ColorRGBA(0.0f, 1.0f, 0.0f, 1.0f);
+
+
+        //volume.first->model.set_color(color_to_set);
+
+        //MJD END
+
         else
             set_render_color(color);
     }
@@ -477,6 +498,11 @@ int GLVolumeCollection::load_object_volume(
     this->volumes.emplace_back(new GLVolume());
     GLVolume& v = *this->volumes.back();
     v.set_color(color_from_model_volume(*model_volume));
+
+    //v.set_color(ColorRGBA(1.0f, 1.0f, 0.0f, 1.0f));             //MJD
+
+    v.internal = model_volume->internal;                //MJD
+
     // apply printable value from the instance
     v.printable = instance->printable;
 #if ENABLE_SMOOTH_NORMALS
@@ -900,6 +926,23 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
             glcheck();
 
             volume.first->model.set_color(volume.first->render_color);
+
+            //MJD START
+
+            //ColorRGBA color_to_set = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+
+            //if (volume.first->internal)
+            //    color_to_set = ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f);
+
+            //else
+            //    color_to_set = ColorRGBA(0.0f, 1.0f, 0.0f, 1.0f);
+
+
+            //volume.first->model.set_color(color_to_set);
+
+            //MJD END
+
+
             shader->set_uniform("view_model_matrix", view_matrix * world_matrix);
             shader->set_uniform("projection_matrix", projection_matrix);
             shader->set_uniform("view_normal_matrix", view_normal_matrix);

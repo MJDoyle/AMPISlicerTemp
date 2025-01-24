@@ -145,6 +145,9 @@ public:
     // Color used to render this volume.
     ColorRGBA render_color;
 
+    //Does this correspond to an internal part
+    bool internal { true };         //MJD
+
     struct CompositeID {
         CompositeID(int object_id, int volume_id, int instance_id) : object_id(object_id), volume_id(volume_id), instance_id(instance_id) {}
         CompositeID() : object_id(-1), volume_id(-1), instance_id(-1) {}
