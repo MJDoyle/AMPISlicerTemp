@@ -1396,12 +1396,15 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
     {
         Assembl3r& assembler = Assembl3r::get_instance();
 
+        assembler.generate_assembly_sequence(print);
+
+
         //std::vector<std::string> additions = assembler.test_pnp(print);
 
-        std::vector<std::string> additions = assembler.simple_layer_assembly(print);
+        //std::vector<std::string> additions = assembler.simple_layer_assembly(print);
 
-        for (std::string addition : additions)
-            file.writeln(addition);
+        //for (std::string addition : additions)
+        //    file.writeln(addition);
     }
 
     //MJD END
@@ -3114,14 +3117,20 @@ void GCodeGenerator::GCodeOutputStream::write(const char *what)
         std::string gcode(m_find_replace ? m_find_replace->process_layer(what) : what);
         // writes string to file
         fwrite(gcode.c_str(), 1, gcode.size(), this->f);
-        m_processor.process_buffer(gcode);
+
+        Assembl3r& assembler = Assembl3r::get_instance();        //MJD
+
+        assembler.AddToGCode(gcode);            //MJD
+
+
+        m_processor.process_buffer(gcode);  //MJDC check this out
     }
 }
 
 void GCodeGenerator::GCodeOutputStream::writeln(const std::string &what)
 {
     if (! what.empty())
-        this->write(what.back() == '\n' ? what : what + '\n');
+        this->write(what.back() == '\n' ? what : what + '\n');  //MJD
 }
 
 void GCodeGenerator::GCodeOutputStream::write_format(const char* format, ...)

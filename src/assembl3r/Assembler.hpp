@@ -36,7 +36,11 @@ class Assembl3r
 
         std::vector<std::string> simple_layer_assembly(Slic3r::Print &print);
 
+        void generate_assembly_sequence(Slic3r::Print &print);
+
         Slic3r::Model initial_model;
+
+        void AddToGCode(std::string fragment);
 
     private:
 
@@ -59,6 +63,7 @@ class Assembl3r
 
         double m_safe_height = 100;
 
+        std::vector<std::string> gcode;  //TEMP - this will eleventually have to be replaced when dealing with splittable objects
 
         std::vector<std::string> m_assembly_commands;
 

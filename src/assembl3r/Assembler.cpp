@@ -1,5 +1,9 @@
 #include "Assembler.hpp"
 #include "libslic3r/Print.hpp"
+#include "yaml-cpp/yaml.h"
+
+#include <fstream>
+
 /*
     Generate a map of object names to object positions in both the model and the print
 */
@@ -71,6 +75,133 @@ void Assembl3r::generate_model_object_pairs(Slic3r::Print &print)
     }   
 }
 
+void Assembl3r::AddToGCode(std::string fragment)
+{
+    std::stringstream ss(fragment);
+    std::string line;
+
+    while (std::getline(ss, line)) {
+        gcode.push_back(line);
+    }
+}
+
+void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
+{
+    generate_model_object_pairs(print);
+
+    YAML::Node root;
+
+    YAML::Node commands = YAML::Node(YAML::NodeType::Sequence);
+
+
+    //Add the search-for-external-parts commands to the assembly
+
+    for (auto const& [id, object_pair] : m_object_map)
+    {
+        if (!object_pair.model_object->volumes[0]->internal)
+        {
+            YAML::Node detect_part_command;
+            detect_part_command["command-type"] = "DETECT_EXTERNAL_PART";
+            detect_part_command["command-properties"]["part-description"] = ""; //TODO need to work out how this interacts with Matheusz' programme
+            detect_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
+
+            commands.push_back(detect_part_command);
+        }
+    }
+
+
+    //Add the 3D printing commands to the assembly
+
+    if (gcode.size() > 0)
+    {
+        YAML::Node print_command;
+        print_command["command-type"] = "POSITION_EXTERNAL_PART";
+
+        // Add "gcode" sequence to the first command
+        YAML::Node gcode1 = YAML::Node(YAML::NodeType::Sequence);
+
+        for (std::string gcode_line : gcode)
+        {
+            gcode1.push_back(gcode_line);
+        }
+
+        print_command["gcode"] = gcode1;
+
+        commands.push_back(print_command);
+    }
+
+    //Generate the pnp commands and add them to the assembly
+
+    //Transfer the object pairs into a vector and sort based on model z height
+
+    std::vector<ModelObjectPairPtrs> sorted_object_pairs;
+
+    for (auto const& [id, object_pair] : m_object_map)
+        sorted_object_pairs.push_back(object_pair);
+
+    std::sort(sorted_object_pairs.begin(), sorted_object_pairs.end(), [](const auto& a, const auto& b) {return a.model_object->mesh().center().z() < b.model_object->mesh().center().z();});
+
+    //Select the first object as the base object
+    size_t base_id = sorted_object_pairs[0].id;
+
+    //Offset between base object position in print and in model
+    Slic3r::Vec3d base_offset = sorted_object_pairs[0].model_object->mesh().center() - sorted_object_pairs[0].print_object->mesh().center();
+
+    //Check that the base offset is zero - the base part must be on the bed in both the model and the print
+    if (base_offset.z() != 0)
+        std::cerr << "Error - z offset of base part is not zero" << std::endl;
+
+
+    //TODO work in printed part names at some point. Or maybe not, since we know their positions etc. we don't really need their names
+    //Or maybe we should send the names through for internal consistency
+
+    //Iterate through each of the objects and vibrate them (except for the base object)
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    {
+        //Do nothing with the base object
+        if (object_pair.id == base_id)
+            continue;
+
+        //TODO
+        //For internal parts we're passing their print positions not their names
+        if (object_pair.model_object->volumes[0]->internal)
+        {
+
+        }
+
+        else
+        {
+            //Go to object model position
+            Slic3r::Vec3d target_position = object_pair.model_object->mesh().center() - base_offset;
+
+            YAML::Node place_external_part_command;
+
+            place_external_part_command["command-type"] = "DIRECT_PRINT";
+
+            place_external_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
+
+            //TODO need to get the height of the external part for picking purposes - we can't use print object for this like we would an internal part
+            place_external_part_command["command-properties"]["part-height"] = object_pair.model_object->mesh().size().z();
+
+            place_external_part_command["command-properties"]["x-target-pos"] = target_position.x();
+
+            place_external_part_command["command-properties"]["y-target-pos"] = target_position.y();
+            
+            place_external_part_command["command-properties"]["z-target-pos"] = object_pair.model_object->max_z();
+            
+
+            commands.push_back(place_external_part_command);
+        }
+    }
+
+    root["commands"] = commands;
+
+    std::ofstream fout("assembly_plan.yaml");
+
+    fout << root;
+
+    fout.close();
+}
 
 bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::vector<stl_vertex> line)
 {
@@ -382,18 +513,18 @@ std::vector<std::string> Assembl3r::simple_layer_assembly(Slic3r::Print &print)
 
 
     //Look at rotations (ModelInstance)
-    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
-    {
-        std::cout << "sorted pair: " << object_pair.id << " " << object_pair.model_object->name << " " << object_pair.model_object->mesh().center().z() << std::endl;
+    // for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    // {
+    //     std::cout << "sorted pair: " << object_pair.id << " " << object_pair.model_object->name << " " << object_pair.model_object->mesh().center().z() << std::endl;
 
-        Slic3r::Vec3d model_rotation_instance = object_pair.model_object->instances[0]->get_rotation();
+    //     Slic3r::Vec3d model_rotation_instance = object_pair.model_object->instances[0]->get_rotation();
 
-        Slic3r::Vec3d print_rotation_instance = object_pair.print_object->instances[0]->get_rotation();
+    //     Slic3r::Vec3d print_rotation_instance = object_pair.print_object->instances[0]->get_rotation();
 
-        std::cout << "Model instance rotation: " << model_rotation_instance.x() << " " << model_rotation_instance.y() << " " << model_rotation_instance.z() << std::endl;
+    //     std::cout << "Model instance rotation: " << model_rotation_instance.x() << " " << model_rotation_instance.y() << " " << model_rotation_instance.z() << std::endl;
 
-        std::cout << "Print instance rotation: " << print_rotation_instance.x() << " " << print_rotation_instance.y() << " " << print_rotation_instance.z() << std::endl;
-    }
+    //     std::cout << "Print instance rotation: " << print_rotation_instance.x() << " " << print_rotation_instance.y() << " " << print_rotation_instance.z() << std::endl;
+    // }
 
     //Check for intersection
     //if (sorted_object_pairs.size() > 1 && meshes_intersect(sorted_object_pairs[0].model_object->mesh(), sorted_object_pairs[1].model_object->mesh()))
