@@ -87,6 +87,7 @@ void Assembl3r::AddToGCode(std::string fragment)
 
 void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 {
+
     generate_model_object_pairs(print);
 
     YAML::Node root;
@@ -101,21 +102,41 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
         if (!object_pair.model_object->volumes[0]->internal)
         {
             YAML::Node detect_part_command;
-            detect_part_command["command-type"] = "DETECT_EXTERNAL_PART";
+            detect_part_command["command-type"] = "LOCATE_EXTERNAL_PART";
             detect_part_command["command-properties"]["part-description"] = ""; //TODO need to work out how this interacts with Matheusz' programme
             detect_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
+            detect_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+            detect_part_command["command-properties"]["part-height"] = object_pair.model_object->mesh().size().z();
 
             commands.push_back(detect_part_command);
         }
     }
 
+    //Add the internal part designation commands
+
+    for (auto const& [id, object_pair] : m_object_map)
+    {
+        if (object_pair.model_object->volumes[0]->internal)
+        {
+            YAML::Node designate_part_command;
+            designate_part_command["command-type"] = "DESIGNATE_INTERNAL_PART";
+            designate_part_command["command-properties"]["part-description"] = "";
+            designate_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
+            designate_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+            designate_part_command["command-properties"]["x-pos"] = object_pair.print_object->mesh().center().x();
+            designate_part_command["command-properties"]["y-pos"] = object_pair.model_object->mesh().center().y();
+            designate_part_command["command-properties"]["part-height"] = object_pair.model_object->mesh().size().z();              //TODO eventually this will be replaced by mesh or something in the part-description
+        
+            commands.push_back(designate_part_command);
+        }
+    }
 
     //Add the 3D printing commands to the assembly
 
     if (gcode.size() > 0)
     {
         YAML::Node print_command;
-        print_command["command-type"] = "POSITION_EXTERNAL_PART";
+        print_command["command-type"] = "DIRECT_PRINT";
 
         // Add "gcode" sequence to the first command
         YAML::Node gcode1 = YAML::Node(YAML::NodeType::Sequence);
@@ -125,7 +146,7 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
             gcode1.push_back(gcode_line);
         }
 
-        print_command["gcode"] = gcode1;
+        print_command["command-properties"]["gcode"] = gcode1;
 
         commands.push_back(print_command);
     }
@@ -141,8 +162,30 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
     std::sort(sorted_object_pairs.begin(), sorted_object_pairs.end(), [](const auto& a, const auto& b) {return a.model_object->mesh().center().z() < b.model_object->mesh().center().z();});
 
+
+
+    if (sorted_object_pairs.size() > 1)
+    {
+        bool intersect = meshes_intersect(sorted_object_pairs[0].model_object->mesh(), sorted_object_pairs[1].model_object->mesh());
+
+        if (intersect)
+            std::cout << "INTERSECTION" << std::endl;
+
+        else
+            std::cout << "NO INTERSECTION" << std::endl;
+    }
+
+
+    //TODO - this doesn't handle an external part being the first object
     //Select the first object as the base object
     size_t base_id = sorted_object_pairs[0].id;
+
+    if (!sorted_object_pairs[0].model_object->volumes[0]->internal)
+    {
+        std::cerr << "Error - base part is not internal" << std::endl;
+        return;
+    }
+
 
     //Offset between base object position in print and in model
     Slic3r::Vec3d base_offset = sorted_object_pairs[0].model_object->mesh().center() - sorted_object_pairs[0].print_object->mesh().center();
@@ -162,36 +205,18 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
         if (object_pair.id == base_id)
             continue;
 
-        //TODO
-        //For internal parts we're passing their print positions not their names
-        if (object_pair.model_object->volumes[0]->internal)
-        {
+        Slic3r::Vec3d target_position = object_pair.model_object->mesh().center() - base_offset;
 
-        }
+        YAML::Node place_part_command;
 
-        else
-        {
-            //Go to object model position
-            Slic3r::Vec3d target_position = object_pair.model_object->mesh().center() - base_offset;
-
-            YAML::Node place_external_part_command;
-
-            place_external_part_command["command-type"] = "DIRECT_PRINT";
-
-            place_external_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
-
-            //TODO need to get the height of the external part for picking purposes - we can't use print object for this like we would an internal part
-            place_external_part_command["command-properties"]["part-height"] = object_pair.model_object->mesh().size().z();
-
-            place_external_part_command["command-properties"]["x-target-pos"] = target_position.x();
-
-            place_external_part_command["command-properties"]["y-target-pos"] = target_position.y();
-            
-            place_external_part_command["command-properties"]["z-target-pos"] = object_pair.model_object->max_z();
-            
-
-            commands.push_back(place_external_part_command);
-        }
+        place_part_command["command-type"] = "PLACE_PART";
+        place_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
+        place_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+        place_part_command["command-properties"]["x-target-pos"] = target_position.x();
+        place_part_command["command-properties"]["y-target-pos"] = target_position.y();                    
+        place_part_command["command-properties"]["z-target-pos"] = object_pair.model_object->max_z();
+        
+        commands.push_back(place_part_command);
     }
 
     root["commands"] = commands;
@@ -207,9 +232,9 @@ bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::v
 {
     std::cout << "Triangle line intersect test" << std::endl;
 
-    std::cout << "Triangle size: " << triangle.size() << std::endl;
+    std::cout << "Triangle: " << std::endl << triangle[0] << " " << triangle[1] << " " << triangle[2] << std::endl;
 
-    std::cout << "Line size: " << line.size() << std::endl;
+    std::cout << "Line: " << std::endl <<  line[0] << " " << line[1] << std::endl;
 
     //Compute triangle normal
     stl_vertex triangle_normal = (triangle[1] - triangle[0]).cross(triangle[2] - triangle[0]);
@@ -251,7 +276,18 @@ bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::v
     //Compute the intersection point
     stl_vertex intersection_point = line[0] + intersection_parameter * line_direction;
 
-    std::cout << "check8" << std::endl;
+    std::cout << "Intersection point: " << intersection_point << std::endl;
+
+    //Check if the intersection point is at one of the triangle vertices - if it is then this does not count as an intersection
+
+    for (auto triangle_vertex : triangle)
+    {
+        float epsilon = 0.00001;
+
+        if (abs(intersection_point(0) - triangle_vertex(0)) < epsilon && abs(intersection_point(1) - triangle_vertex(1)) < epsilon && abs(intersection_point(2) - triangle_vertex(2)) < epsilon)
+            return false;
+    }
+
 
     //Perform a point-in-triangle test in 3D using the barycentric method
     stl_vertex v_0 = triangle[2] - triangle[0];
@@ -369,11 +405,16 @@ bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMe
             triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(1)]).finished());
             triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(2)]).finished());
 
+            std::cout << std::endl << "Triangles to test - A:" << triangle_A[0] << " " << triangle_A[1] << " " << triangle_A[2] << std::endl << " B: " << triangle_B[0] << " " << triangle_B[1] << " " << triangle_B[2] << std::endl;
+
             //triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(0)], vertices_1[triangle_1(1)], vertices_1[triangle_1(2)]).finished());
             //triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(0)], vertices_2[triangle_2(1)], vertices_2[triangle_2(2)]).finished());
 
             if (triangles_intersect(triangle_A, triangle_B))
+            {
+                std::cout << "Triangles intersect" << std::endl;
                 return true;             
+            }
         }
     }
 
