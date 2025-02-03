@@ -22,6 +22,34 @@ namespace Slic3r
 
 class Assembl3r
 {
+    private:
+
+        struct AssemblyNode
+        {
+            std::vector<AssemblyNode*> parents;
+
+            Slic3r::Model model;
+
+            bool operator <(const AssemblyNode& rhs) const              //TODO this is janky
+            {
+                for (auto model_object_1 : model.objects)
+                {
+                    bool id_found = false;
+
+                    for (auto model_object_2 : rhs.model.objects)
+                    {
+                        if (model_object_1->id().id == model_object_2->id().id)
+                            id_found = true;
+                    }
+
+                    if (!id_found)
+                        return true;
+                }
+
+                return false;
+            }
+        };
+
     public:
 
         Assembl3r(const Assembl3r&) = delete;
@@ -42,6 +70,8 @@ class Assembl3r
 
         void AddToGCode(std::string fragment);
 
+        std::vector<AssemblyNode> find_node_neighbours(AssemblyNode node);
+
     private:
 
         Assembl3r() {}
@@ -49,6 +79,8 @@ class Assembl3r
         ~Assembl3r() {}
 
         void generate_model_object_pairs(Slic3r::Print &print);
+
+        std::set<AssemblyNode> m_assembly_nodes;
 
         struct ModelObjectPairPtrs
         {
@@ -67,7 +99,8 @@ class Assembl3r
 
         std::vector<std::string> m_assembly_commands;
 
-
+        //Check if a part can be moved arbitrarily in the z direction without colliding with other parts
+        bool collisions_on_z_move(Slic3r::ModelObject* model_object);
 
         //Mesh functions
 
@@ -76,7 +109,6 @@ class Assembl3r
         bool triangles_intersect(std::vector<stl_vertex> triangle_A, std::vector<stl_vertex> triangle_B);
 
         bool meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMesh mesh_2);
-
 
         //GCode command generators
 

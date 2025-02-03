@@ -164,17 +164,13 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
 
 
-    if (sorted_object_pairs.size() > 1)
-    {
-        bool intersect = meshes_intersect(sorted_object_pairs[0].model_object->mesh(), sorted_object_pairs[1].model_object->mesh());
+    // AssemblyNode base_node;
 
-        if (intersect)
-            std::cout << "INTERSECTION" << std::endl;
+    // base_node.model = initial_model;
 
-        else
-            std::cout << "NO INTERSECTION" << std::endl;
-    }
+    // std::vector<AssemblyNode> neighbours = find_node_neighbours(base_node);
 
+    // std::cout << "NUM NEIGHBOURS: " << neighbours.size() << std::endl;
 
     //TODO - this doesn't handle an external part being the first object
     //Select the first object as the base object
@@ -187,16 +183,33 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
     }
 
 
+    //Generate vibration commands
+
+    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    {
+        //Do nothing with the base object
+        if (object_pair.id == base_id)
+            continue;
+
+        //Only need to vibrate internal parts
+        if (!object_pair.model_object->volumes[0]->internal)
+            continue;
+
+        YAML::Node vibrate_part_command;
+
+        vibrate_part_command["command-type"] = "VIBRATE_PART";
+        vibrate_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+        
+        commands.push_back(vibrate_part_command);
+    }
+
+
     //Offset between base object position in print and in model
     Slic3r::Vec3d base_offset = sorted_object_pairs[0].model_object->mesh().center() - sorted_object_pairs[0].print_object->mesh().center();
 
     //Check that the base offset is zero - the base part must be on the bed in both the model and the print
     if (base_offset.z() != 0)
         std::cerr << "Error - z offset of base part is not zero" << std::endl;
-
-
-    //TODO work in printed part names at some point. Or maybe not, since we know their positions etc. we don't really need their names
-    //Or maybe we should send the names through for internal consistency
 
     //Iterate through each of the objects and vibrate them (except for the base object)
     for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
@@ -418,8 +431,69 @@ bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMe
         }
     }
 
+    return false;
+}
+
+std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::AssemblyNode node)
+{
+    std::vector<Assembl3r::AssemblyNode> neighbours;
+
+    std::cout << "Finding neighbours" << std::endl;
+
+    //Iterate through each object in the node's model
+    //If the object can be removed (no collisions) then create a new node with the new model (minus one object from the original node)
+    //and add this as a neighbour
+    for (auto model_object : node.model.objects)
+    {
+        std::cout << "Object to pick: " << model_object->mesh().center().x() << " " << model_object->mesh().center().y() << " " << model_object->mesh().center().z() << std::endl;
 
 
+        if (!collisions_on_z_move(model_object))
+        {
+            std::cout << "No collisions on move" << std::endl;
+
+            Assembl3r::AssemblyNode neighbour_node;
+
+            neighbour_node.model = node.model;
+
+            neighbours.push_back(neighbour_node);
+        }
+
+        else
+            std::cout << "Collisions on move" << std::endl;
+    }
+
+    return neighbours;
+}
+
+bool Assembl3r::collisions_on_z_move(Slic3r::ModelObject* model_object)
+{
+    //Step the model object up to some maximum height and check collisions against each of the other model parts
+
+    float translatedDistance = 0;
+
+    for (float height = 0; height < 100; height += 1)
+    {
+        translatedDistance += 1;
+
+        model_object->translate(0, 0, 1);
+
+        for (auto const& [id, object_pair] : m_object_map)
+        {
+            //Don't check intersects with self
+            if (id == model_object->id().id)
+                continue;
+
+            if (meshes_intersect(model_object->mesh(), object_pair.model_object->mesh()))
+            {
+                model_object->translate(0, 0, -translatedDistance);
+
+                return true;
+            }
+        }
+    }
+
+    model_object->translate(0, 0, -translatedDistance);
 
     return false;
 }
