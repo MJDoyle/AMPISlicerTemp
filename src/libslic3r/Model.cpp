@@ -260,6 +260,25 @@ ModelObject* Model::add_object(const ModelObject &other)
     return new_object;
 }
 
+
+//MJD START
+
+void Model::remove_object(ObjectID id)
+{
+    if (id.id != 0) {
+        size_t idx = 0;
+        for (ModelObject *model_object : objects) {
+            if (model_object->id() == id) {
+                objects.erase(objects.begin() + idx);
+                return;
+            }
+            ++ idx;
+        }
+    }
+}
+
+//MJD END
+
 void Model::delete_object(size_t idx)
 {
     ModelObjectPtrs::iterator i = this->objects.begin() + idx;

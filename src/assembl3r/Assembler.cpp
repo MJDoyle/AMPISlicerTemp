@@ -3,6 +3,8 @@
 #include "yaml-cpp/yaml.h"
 
 #include <fstream>
+#include <queue>
+#include <unordered_set>
 
 /*
     Generate a map of object names to object positions in both the model and the print
@@ -172,6 +174,16 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
     // std::cout << "NUM NEIGHBOURS: " << neighbours.size() << std::endl;
 
+    std::vector<AssemblyNode> assembly_path = breadth_first_assembly_search();
+
+    std::cout << std::endl << "*** Assembly path ***" << std::endl << std::endl;
+
+    for (AssemblyNode path_node : assembly_path)
+    {
+        std::cout << "Node: ";
+        path_node.PrintInfo();
+    }
+
     //TODO - this doesn't handle an external part being the first object
     //Select the first object as the base object
     size_t base_id = sorted_object_pairs[0].id;
@@ -241,55 +253,179 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
     fout.close();
 }
 
+std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
+{
+    std::vector<AssemblyNode> path;
+
+    AssemblyNode target_node;
+
+    AssemblyNode base_node;
+
+    base_node.model = initial_model;
+
+    std::queue<AssemblyNode> queue;
+
+    std::set<AssemblyNode> visited_nodes;
+
+    std::map<AssemblyNode, AssemblyNode> parents;
+
+    queue.push(base_node);
+
+    visited_nodes.emplace(base_node);
+
+    std::cout << "starting search" << std::endl;
+
+    while (queue.size() > 0)
+    {
+        AssemblyNode current_node = queue.front();
+
+        queue.pop();
+
+        std::cout << "Current node: ";
+        current_node.PrintInfo();
+
+        //Check if current node is target node (e.g. has no model objects)
+        if (current_node.model.objects.size() == 0)
+        {
+            target_node = current_node;
+
+            break;
+        }
+
+        std::vector<AssemblyNode> neighbours = find_node_neighbours(current_node);
+
+        std::cout << "Num neighbours: " << neighbours.size() << std::endl;
+
+        if (neighbours.size() > 0)
+        {
+            std::cout << "Neighbour2: ";
+            neighbours[0].PrintInfo();
+        }
+
+        for (AssemblyNode neighbour : neighbours)
+        {
+            std::cout << "Neighbour: ";
+            neighbour.PrintInfo();
+
+            if (visited_nodes.find(neighbour) != visited_nodes.end())
+                continue;
+
+            std::cout << "Adding neighbour" << std::endl;
+
+            visited_nodes.emplace(neighbour);
+
+            queue.push(neighbour);
+
+            parents[neighbour] = current_node;
+        }
+    }
+
+    if (!parents.count(target_node))
+    {
+        std::cout << "Error - no path found" << std::endl;
+
+        return path;
+    }
+
+    std::cout << "reconstructing path" << std::endl;
+
+
+    std::cout << "parents:" << std::endl;
+
+    for (auto const& [child, parent] : parents)
+    {
+        std::cout << "Child: ";
+        child.PrintInfo();
+
+        std::cout << "Parent: ";
+        parent.PrintInfo();
+    };
+
+
+    AssemblyNode path_node = target_node;
+
+    path.push_back(path_node);
+
+
+
+    while (parents.count(path_node))
+    {
+        std::cout << "Node: ";
+        path_node.PrintInfo();
+
+        path_node = parents[path_node];
+
+        path.push_back(path_node);
+    }
+
+
+    // AssemblyNode path_node = base_node;
+
+    // path.push_back(path_node);
+
+    // while (parents.count(path_node))
+    // {
+    //     path_node = parents[path_node];
+
+    //     path.push_back(path_node);
+    // }
+
+    return path;
+
+    // std::vector<AssemblyNode> neighbours = find_node_neighbours(base_node);
+
+    // std::cout << "NUM NEIGHBOURS: " << neighbours.size() << std::endl;
+}
+
 bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::vector<stl_vertex> line)
 {
-    std::cout << "Triangle line intersect test" << std::endl;
+    //std::cout << "Triangle line intersect test" << std::endl;
 
-    std::cout << "Triangle: " << std::endl << triangle[0] << " " << triangle[1] << " " << triangle[2] << std::endl;
+    //std::cout << "Triangle: " << std::endl << triangle[0] << " " << triangle[1] << " " << triangle[2] << std::endl;
 
-    std::cout << "Line: " << std::endl <<  line[0] << " " << line[1] << std::endl;
+    //std::cout << "Line: " << std::endl <<  line[0] << " " << line[1] << std::endl;
 
     //Compute triangle normal
     stl_vertex triangle_normal = (triangle[1] - triangle[0]).cross(triangle[2] - triangle[0]);
 
-    std::cout << "check1" << std::endl;
+    //std::cout << "check1" << std::endl;
 
     //Compute line direction vector
     stl_vertex line_direction = line[1] - line[0];
 
-    std::cout << "check2" << std::endl;
+    //std::cout << "check2" << std::endl;
 
     //Check angle between line and normal
     float triangle_normal_dot_line_direction = triangle_normal.dot(line_direction);
 
-    std::cout << "check3" << std::endl;
+    //std::cout << "check3" << std::endl;
 
     //A value of 0 indicates an angle of 90 -> the line and triangle are parallel and so don't intersect
     if (triangle_normal_dot_line_direction == 0)
         return false; 
 
-    std::cout << "check4" << std::endl;
+    //std::cout << "check4" << std::endl;
 
     //Compute vector from line start point to any triangle point
     stl_vertex line_triangle_delta = triangle[0] - line[0];
 
-    std::cout << "check5" << std::endl;
+    //std::cout << "check5" << std::endl;
 
     //Compute intersection parameter
     float intersection_parameter = triangle_normal.dot(line_triangle_delta) / triangle_normal_dot_line_direction;
 
-    std::cout << "check6" << std::endl;
+    //std::cout << "check6" << std::endl;
 
     //If paramter does not lie within 0 <= t <= 1, there is no intersection
     if (intersection_parameter < 0 || intersection_parameter > 1)
         return false;
 
-    std::cout << "check7" << std::endl;
+    //std::cout << "check7" << std::endl;
 
     //Compute the intersection point
     stl_vertex intersection_point = line[0] + intersection_parameter * line_direction;
 
-    std::cout << "Intersection point: " << intersection_point << std::endl;
+    //std::cout << "Intersection point: " << intersection_point << std::endl;
 
     //Check if the intersection point is at one of the triangle vertices - if it is then this does not count as an intersection
 
@@ -307,7 +443,7 @@ bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::v
     stl_vertex v_1 = triangle[1] - triangle[0];
     stl_vertex v_2 = intersection_point - triangle[0];
 
-    std::cout << "check9" << std::endl;
+    //std::cout << "check9" << std::endl;
 
     float d_00 = v_0.dot(v_0);
     float d_01 = v_0.dot(v_1);
@@ -315,7 +451,7 @@ bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::v
     float d_20 = v_2.dot(v_0);
     float d_21 = v_2.dot(v_1);
 
-    std::cout << "check10" << std::endl;
+    //std::cout << "check10" << std::endl;
 
     float denom = d_00 * d_11 - d_01 * d_01;
 
@@ -332,7 +468,7 @@ bool Assembl3r::triangle_line_intersect(std::vector<stl_vertex> triangle, std::v
 
 bool Assembl3r::triangles_intersect(std::vector<stl_vertex> triangle_A, std::vector<stl_vertex> triangle_B)
 {
-    std::cout << "Triangles intersect test" << std::endl;
+    //std::cout << "Triangles intersect test" << std::endl;
 
     std::vector<stl_vertex> line_A_a;
     std::vector<stl_vertex> line_A_b;
@@ -387,7 +523,7 @@ bool Assembl3r::triangles_intersect(std::vector<stl_vertex> triangle_A, std::vec
 
 bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMesh mesh_2)
 {
-    std::cout << "Meshes intersect test" << std::endl;
+    //std::cout << "Meshes intersect test" << std::endl;
 
     std::vector<stl_triangle_vertex_indices> indices_1 = mesh_1.its.indices;
 
@@ -418,14 +554,14 @@ bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMe
             triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(1)]).finished());
             triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(2)]).finished());
 
-            std::cout << std::endl << "Triangles to test - A:" << triangle_A[0] << " " << triangle_A[1] << " " << triangle_A[2] << std::endl << " B: " << triangle_B[0] << " " << triangle_B[1] << " " << triangle_B[2] << std::endl;
+            //std::cout << std::endl << "Triangles to test - A:" << triangle_A[0] << " " << triangle_A[1] << " " << triangle_A[2] << std::endl << " B: " << triangle_B[0] << " " << triangle_B[1] << " " << triangle_B[2] << std::endl;
 
             //triangle_A.push_back((stl_vertex() << vertices_1[triangle_1(0)], vertices_1[triangle_1(1)], vertices_1[triangle_1(2)]).finished());
             //triangle_B.push_back((stl_vertex() << vertices_2[triangle_2(0)], vertices_2[triangle_2(1)], vertices_2[triangle_2(2)]).finished());
 
             if (triangles_intersect(triangle_A, triangle_B))
             {
-                std::cout << "Triangles intersect" << std::endl;
+                //std::cout << "Triangles intersect" << std::endl;
                 return true;             
             }
         }
@@ -448,7 +584,7 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::
         std::cout << "Object to pick: " << model_object->mesh().center().x() << " " << model_object->mesh().center().y() << " " << model_object->mesh().center().z() << std::endl;
 
 
-        if (!collisions_on_z_move(model_object))
+        if (!collisions_on_z_move(node.model, model_object))
         {
             std::cout << "No collisions on move" << std::endl;
 
@@ -456,17 +592,29 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::
 
             neighbour_node.model = node.model;
 
+            //Remove object
+            neighbour_node.model.remove_object(model_object->id());
+
             neighbours.push_back(neighbour_node);
+
+            std::cout << "Neighbour node: ";
+            neighbour_node.PrintInfo();
         }
 
         else
             std::cout << "Collisions on move" << std::endl;
     }
 
+    if (neighbours.size() > 0)
+    {
+        std::cout << "Neighbour1: ";
+        neighbours[0].PrintInfo();
+    }
+
     return neighbours;
 }
 
-bool Assembl3r::collisions_on_z_move(Slic3r::ModelObject* model_object)
+bool Assembl3r::collisions_on_z_move(Slic3r::Model model, Slic3r::ModelObject* model_object)
 {
     //Step the model object up to some maximum height and check collisions against each of the other model parts
 
@@ -478,13 +626,13 @@ bool Assembl3r::collisions_on_z_move(Slic3r::ModelObject* model_object)
 
         model_object->translate(0, 0, 1);
 
-        for (auto const& [id, object_pair] : m_object_map)
+        for (auto object_ptr : model.objects)
         {
             //Don't check intersects with self
-            if (id == model_object->id().id)
+            if (object_ptr->id().id == model_object->id().id)
                 continue;
 
-            if (meshes_intersect(model_object->mesh(), object_pair.model_object->mesh()))
+            if (meshes_intersect(model_object->mesh(), object_ptr->mesh()))
             {
                 model_object->translate(0, 0, -translatedDistance);
 
@@ -589,22 +737,6 @@ void Assembl3r::GCODE_vacuum_off()
     m_assembly_commands.push_back(std::string("VACUUM_OFF ;Turn vacuum off"));
 }
 
-
-std::vector<std::string> Assembl3r::simple_rotation(Slic3r::Print &print)
-{
-    // generate_model_object_pairs(print);
-
-    // if (m_object_map.size() == 0)
-    //     return m_assembly_commands;
-
-    // //Iterate though each part, vibrate it, pick it, rotate it, place it
-    // for (auto const& [name, object_pair] : m_object_map)
-    // {
-    //     object_pair.print_object
-    // }
-
-    return m_assembly_commands;
-}
 
 
 std::vector<std::string> Assembl3r::simple_layer_assembly(Slic3r::Print &print)

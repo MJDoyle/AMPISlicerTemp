@@ -30,6 +30,18 @@ class Assembl3r
 
             Slic3r::Model model;
 
+            void PrintInfo() const
+            {
+                std::cout << "Node: ";
+
+                for (auto model_object : model.objects)
+                {
+                    std::cout << model_object->id().id << " ";
+                }
+
+                std::cout << std::endl;
+            }
+
             bool operator <(const AssemblyNode& rhs) const              //TODO this is janky
             {
                 for (auto model_object_1 : model.objects)
@@ -48,6 +60,25 @@ class Assembl3r
 
                 return false;
             }
+
+            bool operator ==(const AssemblyNode& rhs) const
+            {
+                for (auto model_object_1 : model.objects)
+                {
+                    bool id_found = false;
+
+                    for (auto model_object_2 : rhs.model.objects)
+                    {
+                        if (model_object_1->id().id == model_object_2->id().id)
+                            id_found = true;
+                    }
+
+                    if (!id_found)
+                        return false;
+                }
+
+                return true;
+            }
         };
 
     public:
@@ -60,8 +91,6 @@ class Assembl3r
             return instance;
         }
 
-        std::vector<std::string> simple_rotation(Slic3r::Print &print);
-
         std::vector<std::string> simple_layer_assembly(Slic3r::Print &print);
 
         void generate_assembly_sequence(Slic3r::Print &print);
@@ -69,6 +98,8 @@ class Assembl3r
         Slic3r::Model initial_model;
 
         void AddToGCode(std::string fragment);
+
+        std::vector<AssemblyNode> breadth_first_assembly_search();
 
         std::vector<AssemblyNode> find_node_neighbours(AssemblyNode node);
 
@@ -100,7 +131,7 @@ class Assembl3r
         std::vector<std::string> m_assembly_commands;
 
         //Check if a part can be moved arbitrarily in the z direction without colliding with other parts
-        bool collisions_on_z_move(Slic3r::ModelObject* model_object);
+        bool collisions_on_z_move(Slic3r::Model model, Slic3r::ModelObject* model_object);
 
         //Mesh functions
 
