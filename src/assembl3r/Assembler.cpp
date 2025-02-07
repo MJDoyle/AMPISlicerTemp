@@ -233,7 +233,7 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
             continue;
 
         //Only need to vibrate internal parts
-        if (!m_object_map[base_id].model_object->volumes[0]->internal)
+        if (!m_object_map[id].model_object->volumes[0]->internal)
             continue;
 
         YAML::Node vibrate_part_command;
@@ -274,16 +274,16 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
         if (id == base_id && m_object_map[base_id].model_object->volumes[0]->internal)
             continue;
 
-        Slic3r::Vec3d target_position = m_object_map[base_id].model_object->mesh().center() - base_offset;
+        Slic3r::Vec3d target_position = m_object_map[id].model_object->mesh().center() - base_offset;
 
         YAML::Node place_part_command;
 
         place_part_command["command-type"] = "PLACE_PART";
-        place_part_command["command-properties"]["part-name"] = m_object_map[base_id].model_object->name;
+        place_part_command["command-properties"]["part-name"] = m_object_map[id].model_object->name;
         place_part_command["command-properties"]["part-id"] = id;
         place_part_command["command-properties"]["x-target-pos"] = target_position.x();
         place_part_command["command-properties"]["y-target-pos"] = target_position.y();                    
-        place_part_command["command-properties"]["z-target-pos"] = m_object_map[base_id].model_object->max_z();
+        place_part_command["command-properties"]["z-target-pos"] = m_object_map[id].model_object->max_z();
         
         commands.push_back(place_part_command);
     }
