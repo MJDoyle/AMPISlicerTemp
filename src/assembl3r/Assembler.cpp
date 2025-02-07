@@ -157,12 +157,12 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
     //Transfer the object pairs into a vector and sort based on model z height
 
-    std::vector<ModelObjectPairPtrs> sorted_object_pairs;
+    // std::vector<ModelObjectPairPtrs> sorted_object_pairs;
 
-    for (auto const& [id, object_pair] : m_object_map)
-        sorted_object_pairs.push_back(object_pair);
+    // for (auto const& [id, object_pair] : m_object_map)
+    //     sorted_object_pairs.push_back(object_pair);
 
-    std::sort(sorted_object_pairs.begin(), sorted_object_pairs.end(), [](const auto& a, const auto& b) {return a.model_object->mesh().center().z() < b.model_object->mesh().center().z();});
+    // std::sort(sorted_object_pairs.begin(), sorted_object_pairs.end(), [](const auto& a, const auto& b) {return a.model_object->mesh().center().z() < b.model_object->mesh().center().z();});
 
 
 
@@ -184,11 +184,40 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
         path_node.PrintInfo();
     }
 
+    std::vector<size_t> ordered_part_ids;
+
+    for (AssemblyNode path_node : assembly_path)
+    {
+        for (Slic3r::ModelObject* object_ptr : path_node.model.objects)
+        {
+            bool already_present = false;
+
+            for (size_t id : ordered_part_ids)
+            {
+                if (id == object_ptr->id().id)
+                    already_present = true;
+            }
+
+            if (!already_present)
+                ordered_part_ids.push_back(object_ptr->id().id);        
+        }
+    }
+
+    std::cout << "Part order by ID: " << std::endl;
+
+    for (size_t id : ordered_part_ids)
+    {
+        std::cout << "ID: " << id << std::endl;
+    }
+    
+
+    //Generate ordered list of parts from assembly path
+
     //TODO - this doesn't handle an external part being the first object
     //Select the first object as the base object
-    size_t base_id = sorted_object_pairs[0].id;
+    size_t base_id = ordered_part_ids[0];
 
-    if (!sorted_object_pairs[0].model_object->volumes[0]->internal)
+    if (!m_object_map[base_id].model_object->volumes[0]->internal)
     {
         std::cerr << "Error - base part is not internal" << std::endl;
         return;
@@ -197,49 +226,49 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
     //Generate vibration commands
 
-    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    for (size_t id : ordered_part_ids)
     {
         //Do nothing with the base object
-        if (object_pair.id == base_id)
+        if (id == base_id)
             continue;
 
         //Only need to vibrate internal parts
-        if (!object_pair.model_object->volumes[0]->internal)
+        if (!m_object_map[base_id].model_object->volumes[0]->internal)
             continue;
 
         YAML::Node vibrate_part_command;
 
         vibrate_part_command["command-type"] = "VIBRATE_PART";
-        vibrate_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+        vibrate_part_command["command-properties"]["part-id"] = id;
         
         commands.push_back(vibrate_part_command);
     }
 
 
     //Offset between base object position in print and in model
-    Slic3r::Vec3d base_offset = sorted_object_pairs[0].model_object->mesh().center() - sorted_object_pairs[0].print_object->mesh().center();
+    Slic3r::Vec3d base_offset = m_object_map[base_id].model_object->mesh().center() - m_object_map[base_id].print_object->mesh().center();
 
     //Check that the base offset is zero - the base part must be on the bed in both the model and the print
     if (base_offset.z() != 0)
         std::cerr << "Error - z offset of base part is not zero" << std::endl;
 
     //Iterate through each of the objects and vibrate them (except for the base object)
-    for (ModelObjectPairPtrs object_pair : sorted_object_pairs)
+    for (size_t id : ordered_part_ids)
     {
         //Do nothing with the base object
-        if (object_pair.id == base_id)
+        if (id == base_id)
             continue;
 
-        Slic3r::Vec3d target_position = object_pair.model_object->mesh().center() - base_offset;
+        Slic3r::Vec3d target_position = m_object_map[base_id].model_object->mesh().center() - base_offset;
 
         YAML::Node place_part_command;
 
         place_part_command["command-type"] = "PLACE_PART";
-        place_part_command["command-properties"]["part-name"] = object_pair.model_object->name;
-        place_part_command["command-properties"]["part-id"] = object_pair.model_object->id().id;
+        place_part_command["command-properties"]["part-name"] = m_object_map[base_id].model_object->name;
+        place_part_command["command-properties"]["part-id"] = id;
         place_part_command["command-properties"]["x-target-pos"] = target_position.x();
         place_part_command["command-properties"]["y-target-pos"] = target_position.y();                    
-        place_part_command["command-properties"]["z-target-pos"] = object_pair.model_object->max_z();
+        place_part_command["command-properties"]["z-target-pos"] = m_object_map[base_id].model_object->max_z();
         
         commands.push_back(place_part_command);
     }
