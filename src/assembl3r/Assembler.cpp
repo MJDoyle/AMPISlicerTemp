@@ -217,11 +217,11 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
     //Select the first object as the base object
     size_t base_id = ordered_part_ids[0];
 
-    if (!m_object_map[base_id].model_object->volumes[0]->internal)
-    {
-        std::cerr << "Error - base part is not internal" << std::endl;
-        return;
-    }
+    // if (!m_object_map[base_id].model_object->volumes[0]->internal)
+    // {
+    //     std::cerr << "Error - base part is not internal" << std::endl;
+    //     return;
+    // }
 
 
     //Generate vibration commands
@@ -246,17 +246,32 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
 
     //Offset between base object position in print and in model
-    Slic3r::Vec3d base_offset = m_object_map[base_id].model_object->mesh().center() - m_object_map[base_id].print_object->mesh().center();
+    Slic3r::Vec3d base_offset;
+
+    if (m_object_map[base_id].model_object->volumes[0]->internal)
+        base_offset = m_object_map[base_id].model_object->mesh().center() - m_object_map[base_id].print_object->mesh().center();
+
+    else 
+    {
+        Slic3r::Vec3d build_position;
+
+        build_position[0] = 550;
+        build_position[1] = 200;
+        build_position[2] = m_object_map[base_id].model_object->mesh().center()[2];
+
+        base_offset = m_object_map[base_id].model_object->mesh().center() - build_position;
+    }
+
 
     //Check that the base offset is zero - the base part must be on the bed in both the model and the print
     if (base_offset.z() != 0)
         std::cerr << "Error - z offset of base part is not zero" << std::endl;
 
-    //Iterate through each of the objects and vibrate them (except for the base object)
+    //Iterate through each of the objects and place them
     for (size_t id : ordered_part_ids)
     {
-        //Do nothing with the base object
-        if (id == base_id)
+        //Do nothing with the base object if it's internal
+        if (id == base_id && m_object_map[base_id].model_object->volumes[0]->internal)
             continue;
 
         Slic3r::Vec3d target_position = m_object_map[base_id].model_object->mesh().center() - base_offset;
