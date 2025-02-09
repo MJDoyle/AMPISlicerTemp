@@ -428,9 +428,34 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
         return path;
     }
 
+    bool internalStartFound = false;
+
     //Determine first path node - check all parents of the path node (no parts) to find all nodes with one part
     //Select the most suitable one (an internal part if one exists)
+    for (auto const& [child, parent] : parents)
+    {
+        if (child.model.objects.size() == 1 && child.model.objects[0]->volumes[0]->internal)
+        {
+            internalStartFound = true;
+            first_part_node = parents[child];
+            break;
+        }
+    }
 
+    bool startFound = false;
+
+    if (!internalStartFound)
+    {
+        for (auto const& [child, parent] : parents)
+        {
+            if (child.model.objects.size() == 1)
+            {
+                startFound = true;
+                first_part_node = parents[child];
+                break;
+            }
+        }   
+    }
 
     std::cout << "reconstructing path" << std::endl;
 
@@ -451,6 +476,12 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
     path.push_back(path_node);
 
+    if (startFound)
+    {
+        path_node = first_part_node;
+
+        path.push_back(path_node);
+    }
 
 
     while (parents.count(path_node))

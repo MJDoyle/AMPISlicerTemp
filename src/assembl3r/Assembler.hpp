@@ -46,7 +46,7 @@ class Assembl3r
 
             void PrintInfo() const
             {
-                std::cout << "Node: " << id;
+                std::cout << "Node: " << id << " ";
 
                 for (auto model_object : model.objects)
                 {
