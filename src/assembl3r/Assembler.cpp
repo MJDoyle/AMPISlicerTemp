@@ -77,6 +77,48 @@ void Assembl3r::generate_model_object_pairs(Slic3r::Print &print)
     }   
 }
 
+size_t Assembl3r::node_id_generator(std::vector<size_t> object_ids)
+{
+    for (auto const& [id, obj_ids] : node_id_map)
+    {
+        if (object_ids.size() != obj_ids.size())
+            continue;
+        
+        bool allFound = true;
+
+        for (size_t obj_id_1 : object_ids)
+        {
+            bool found = false;
+
+            for (size_t obj_id_2 : obj_ids)
+            {
+                if (obj_id_1 == obj_id_2)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                allFound = false;
+
+                break;
+            }
+        }
+
+        if (allFound)
+            return id;
+
+
+    }
+
+    //Not found, new ID
+    node_id_map[next_node_ID++] = object_ids;
+
+    return next_node_ID - 1;
+}
+
 void Assembl3r::AddToGCode(std::string fragment)
 {
     std::stringstream ss(fragment);
@@ -303,15 +345,22 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
     AssemblyNode target_node;
 
+    AssemblyNode first_part_node;
+
     AssemblyNode base_node;
 
     base_node.model = initial_model;
+
+    base_node.id  = node_id_generator(base_node.ObjectIDs());
 
     std::queue<AssemblyNode> queue;
 
     std::set<AssemblyNode> visited_nodes;
 
     std::map<AssemblyNode, AssemblyNode> parents;
+
+    //std::map<AssemblyNode, AssemblyNode> all_parents;
+
 
     queue.push(base_node);
 
@@ -325,26 +374,19 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
         queue.pop();
 
-        std::cout << "Current node: ";
+        std::cout << std::endl << "Current node: ";
         current_node.PrintInfo();
 
         //Check if current node is target node (e.g. has no model objects)
         if (current_node.model.objects.size() == 0)
         {
             target_node = current_node;
-
-            break;
+        
         }
 
         std::vector<AssemblyNode> neighbours = find_node_neighbours(current_node);
 
         std::cout << "Num neighbours: " << neighbours.size() << std::endl;
-
-        if (neighbours.size() > 0)
-        {
-            std::cout << "Neighbour2: ";
-            neighbours[0].PrintInfo();
-        }
 
         for (AssemblyNode neighbour : neighbours)
         {
@@ -358,9 +400,24 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
             visited_nodes.emplace(neighbour);
 
+            std::cout << "check1" << std::endl;
+
             queue.push(neighbour);
 
+            std::cout << "check2" << std::endl;
+
             parents[neighbour] = current_node;
+
+            std::cout << "parents:" << std::endl;
+
+            for (auto const& [child, parent] : parents)
+            {
+                std::cout << "Child: ";
+                child.PrintInfo();
+
+                std::cout << "Parent: ";
+                parent.PrintInfo();
+            };
         }
     }
 
@@ -370,6 +427,10 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
         return path;
     }
+
+    //Determine first path node - check all parents of the path node (no parts) to find all nodes with one part
+    //Select the most suitable one (an internal part if one exists)
+
 
     std::cout << "reconstructing path" << std::endl;
 
@@ -639,20 +700,13 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::
             //Remove object
             neighbour_node.model.remove_object(model_object->id());
 
-            neighbours.push_back(neighbour_node);
+            neighbour_node.id = node_id_generator(neighbour_node.ObjectIDs());
 
-            std::cout << "Neighbour node: ";
-            neighbour_node.PrintInfo();
+            neighbours.push_back(neighbour_node);
         }
 
         else
             std::cout << "Collisions on move" << std::endl;
-    }
-
-    if (neighbours.size() > 0)
-    {
-        std::cout << "Neighbour1: ";
-        neighbours[0].PrintInfo();
     }
 
     return neighbours;

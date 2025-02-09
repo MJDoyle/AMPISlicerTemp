@@ -30,9 +30,23 @@ class Assembl3r
 
             Slic3r::Model model;
 
+            size_t id;
+
+            std::vector<size_t> ObjectIDs()
+            {
+                std::vector<size_t> ids;
+
+                for (auto model_object : model.objects)
+                {
+                    ids.push_back(model_object->id().id);
+                }
+
+                return ids;
+            }
+
             void PrintInfo() const
             {
-                std::cout << "Node: ";
+                std::cout << "Node: " << id;
 
                 for (auto model_object : model.objects)
                 {
@@ -44,40 +58,70 @@ class Assembl3r
 
             bool operator <(const AssemblyNode& rhs) const              //TODO this is janky
             {
-                for (auto model_object_1 : model.objects)
-                {
-                    bool id_found = false;
+                return id < rhs.id;
 
-                    for (auto model_object_2 : rhs.model.objects)
-                    {
-                        if (model_object_1->id().id == model_object_2->id().id)
-                            id_found = true;
-                    }
+                // std::cout << "checking < ";
 
-                    if (!id_found)
-                        return true;
-                }
+                // std::cout << "LHS: ";
 
-                return false;
+                // for (auto model_object_1 : model.objects)
+                // {
+                //     std::cout << model_object_1->id().id << ", ";
+                // }
+
+
+                // std::cout << "RHS: ";
+
+                // for (auto model_object_2 : rhs.model.objects)
+                // {
+                //     std::cout << model_object_2->id().id << ", ";
+                // }
+
+
+
+                // for (auto model_object_1 : model.objects)
+                // {
+                //     bool id_found = false;
+
+                //     for (auto model_object_2 : rhs.model.objects)
+                //     {
+
+                //         if (model_object_1->id().id == model_object_2->id().id)
+                //             id_found = true;
+                //     }
+
+                //     if (!id_found)
+                //     {
+                //         std::cout << "True" << std::endl;
+
+                //         return true;
+                //     }
+                // }
+
+                // std::cout << "False" << std::endl;
+
+                //return false;
             }
 
             bool operator ==(const AssemblyNode& rhs) const
             {
-                for (auto model_object_1 : model.objects)
-                {
-                    bool id_found = false;
+                return id == rhs.id;
 
-                    for (auto model_object_2 : rhs.model.objects)
-                    {
-                        if (model_object_1->id().id == model_object_2->id().id)
-                            id_found = true;
-                    }
+                // for (auto model_object_1 : model.objects)
+                // {
+                //     bool id_found = false;
 
-                    if (!id_found)
-                        return false;
-                }
+                //     for (auto model_object_2 : rhs.model.objects)
+                //     {
+                //         if (model_object_1->id().id == model_object_2->id().id)
+                //             id_found = true;
+                //     }
 
-                return true;
+                //     if (!id_found)
+                //         return false;
+                // }
+
+                // return true;
             }
         };
 
@@ -108,6 +152,12 @@ class Assembl3r
         Assembl3r() {}
 
         ~Assembl3r() {}
+
+        size_t node_id_generator(std::vector<size_t> object_ids);
+
+        std::map<size_t, std::vector<size_t>> node_id_map;
+
+        size_t next_node_ID = 0;
 
         void generate_model_object_pairs(Slic3r::Print &print);
 
