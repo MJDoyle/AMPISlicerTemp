@@ -42,6 +42,8 @@
 #include "libslic3r/SLAPrint.hpp"
 #include "NotificationManager.hpp"
 
+#include "assembl3r/Assembler.hpp"  //MJD   
+
 #ifdef _WIN32
 #include "BitmapComboBox.hpp"
 #endif
@@ -110,6 +112,8 @@ bool ViewAssembly::init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrint
     m_canvas->enable_labels(true);
     m_canvas->enable_slope(true);
 
+    create_sliders();
+
     wxBoxSizer* main_sizer = new wxBoxSizer(wxVERTICAL);
     main_sizer->Add(m_canvas_widget, 1, wxALL | wxEXPAND, 0);
 
@@ -156,6 +160,9 @@ void ViewAssembly::reload_scene(bool refresh_immediately, bool force_full_scene_
 
     if (m_canvas != nullptr)
         m_canvas->reload_scene(refresh_immediately, force_full_scene_refresh);
+
+    //TODO not sure if this is the best way to do this
+    update_assembly_slider();
 }
     
 void ViewAssembly::render()
@@ -171,10 +178,266 @@ void ViewAssembly::select_view(const std::string& direction)
         m_canvas->select_view(direction);
 }
 
-//MJD END
+void ViewAssembly::create_sliders()
+{
+    // Move Gcode Slider
+
+    m_assembly_slider = std::make_unique<DoubleSlider::DSForGcode>(0, 0, 0, 100);
+    m_assembly_slider->SetEmUnit(wxGetApp().em_unit());
+
+    m_assembly_slider->set_callback_on_thumb_move([this]() ->void { on_assembly_slider_scroll_changed(); });
+
+    // m_canvas_widget
+    //m_canvas_widget->Bind(wxEVT_KEY_DOWN,                    &Preview::update_sliders_from_canvas, this);
+    //m_canvas_widget->Bind(EVT_GLCANVAS_SLIDERS_MANIPULATION, &Preview::update_sliders_from_canvas, this);
+
+    // Hide sliders from the very begibing. Visibility will be set later
+    //m_layers_slider->Hide();
+    //m_moves_slider->Hide();
+}
+
+void ViewAssembly::render_sliders(GLCanvas3D& canvas)
+{
+    const Size  cnv_size        = canvas.get_canvas_size();
+    const int   canvas_width    = cnv_size.get_width();
+    const int   canvas_height   = cnv_size.get_height();
+    const float extra_scale     = cnv_size.get_scale_factor();
+
+//     GLToolbar& collapse_toolbar = wxGetApp().plater()->get_collapse_toolbar();
+// #if ENABLE_HACK_GCODEVIEWER_SLOW_ON_MAC
+//     // When the application is run as GCodeViewer the collapse toolbar is enabled but invisible, as it is renderer
+//     // outside of the screen
+//     const bool  is_collapse_btn_shown = wxGetApp().is_editor() ? collapse_toolbar.is_enabled() : false;
+// #else
+//     const bool  is_collapse_btn_shown = collapse_toolbar.is_enabled();
+// #endif // ENABLE_HACK_GCODEVIEWER_SLOW_ON_MAC
+
+    if (m_assembly_slider)
+        m_assembly_slider->Render(canvas_width, canvas_height, extra_scale);
+}
+
+void ViewAssembly::on_assembly_slider_scroll_changed()
+{
+    if (m_canvas == nullptr)
+        return;
+
+    std::cout << "assembly slider scroll changed" << std::endl;
+ 
+    Assembl3r& assembler = Assembl3r::get_instance();
+
+    std::vector<Assembl3r::AssemblyNode*> assembly_path = assembler.GetAssemblyPath();
+
+    if (assembly_path.size() == 0)
+        return;
+
+    std::cout << "setting canvas model" << std::endl;
+
+    // Model* model_ptr = &(assembly_path[static_cast<unsigned int>(m_assembly_slider->GetHigherValue())].model);
+
+    // for (auto modelObject : model_ptr->objects)
+    // {
+    //     std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+    //     for (auto modelVolume : modelObject->volumes)
+    //     {
+    //         std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+    //     }
+    // }
+
+    m_canvas->set_model(assembly_path[static_cast<unsigned int>(m_assembly_slider->GetHigherValue())]->model);
+
+    //m_canvas->set_model(&(assembly_path[static_cast<unsigned int>(m_assembly_slider->GetHigherValue())].model));
+
+    std::cout << "canvas model2:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+    m_canvas->reload_scene(true, true);
+
+    m_canvas->set_as_dirty();
+
+    m_canvas->request_extra_frame();
+
+    std::cout << "canvas model3:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+}
+
+void ViewAssembly::update_assembly_slider()
+{
+    std::cout << "update_assembly_slider 1" << std::endl;
+
+    if (m_assembly_slider == nullptr)
+        return;
+
+    std::cout << "update_assembly_slider 2" << std::endl;
+
+    Assembl3r& assembler = Assembl3r::get_instance();
+
+    std::vector<Assembl3r::AssemblyNode*> assembly_path = assembler.GetAssemblyPath();
+
+    if (assembly_path.size() == 0)
+        return;
+
+    std::cout << "update_assembly_slider 3" << std::endl;
+
+    std::vector<unsigned int> values;
+
+    for (int i = 0; i < assembly_path.size(); i ++)
+        values.push_back(i);
+
+    std::cout << "update_assembly_slider 4" << std::endl;
+
+
+    std::cout << "canvas model4:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+    m_assembly_slider->SetSliderValues(values);
 
 
 
+    std::cout << "canvas model5:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+
+    m_assembly_slider->SetSliderAlternateValues(values);
+
+    std::cout << "canvas model6:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+
+
+    m_assembly_slider->Freeze();
+
+
+    std::cout << "canvas model7:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+
+    m_assembly_slider->SetMaxPos(static_cast<int>(values.size()) - 1);
+
+
+
+    std::cout << "canvas model8:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+    m_assembly_slider->SetSelectionSpan(0, static_cast<int>(values.size()) - 1);
+
+
+    std::cout << "canvas model9:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+
+    m_assembly_slider->Thaw();
+
+
+
+    std::cout << "canvas model10:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+
+    m_assembly_slider->ShowLowerThumb(get_app_config()->get("seq_top_layer_only") == "0");
+
+    std::cout << "update_assembly_slider 5" << std::endl;
+
+    std::cout << "canvas model:" << std::endl;
+
+    for (auto modelObject : m_canvas->get_model()->objects)
+    {
+        std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+        for (auto modelVolume : modelObject->volumes)
+        {
+            std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+        }
+    }
+
+}
 
 
 View3D::View3D(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process)

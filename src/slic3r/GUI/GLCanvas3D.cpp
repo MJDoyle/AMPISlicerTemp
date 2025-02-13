@@ -2108,6 +2108,8 @@ void GLCanvas3D::mirror_selection(Axis axis)
 // 5) Out of bed collision status & message overlay (texture)
 void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_refresh)
 {
+    std::cout << "Canvas reload0" << std::endl;     //MJD
+
     if (m_assembly_view)        //MJD
         std::cout << "Assembly view reload scene" << std::endl;
 
@@ -2123,28 +2125,49 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
 
     //MJD START
 
-    if (m_assembly_view)
-    {
+    // if (m_assembly_view)
+    // {
 
-        std::cout << std::endl << "Objects at assembly view reload: " << std::endl;
+    //     if (m_model == nullptr)
+    //         std::cout << "Model pointer null" << std::endl;
 
-        for (auto modelObject : m_model->objects)
-        {
-            std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+    //     else
+    //     {
+    //         std::cout << std::endl << "Objects at assembly view reload: " << std::endl;
 
-            for (auto modelVolume : modelObject->volumes)
-            {
-                std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
-            }
-        }
+    //         for (auto modelObject : m_model->objects)
+    //         {
+    //             if (modelObject == nullptr)
+    //             {
+    //                 std::cout << "Modelobject pointer null" << std::endl;
+    //                 continue;
+    //             }
 
-        std::cout << std::endl;
 
-    }
+
+    //             std::cout << "ModelObject. ID: " << modelObject->id().id << " Name: " << modelObject->name << std::endl;
+
+    //             for (auto modelVolume : modelObject->volumes)
+    //             {
+    //                 if (modelVolume == nullptr)
+    //                 {
+    //                     std::cout << "Modelvolume pointer null" << std::endl;
+    //                     continue;
+    //                 }
+
+    //                 std::cout << "ModelVolume. ID: " << modelVolume->id().id << " Name: " << modelVolume->name << " Internal: " << modelVolume->internal << std::endl;
+    //             }
+    //         }
+
+    //         std::cout << std::endl;
+    //     }
+    // }
 
 
     //MJD END
-    
+
+    std::cout << "Canvas reload1" << std::endl;     //MJD
+
     _set_current();
 
     m_hover_volume_idxs.clear();
@@ -2200,6 +2223,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
     auto model_volume_state_lower = [](const ModelVolumeState& m1, const ModelVolumeState& m2) { return m1.geometry_id < m2.geometry_id; };
 
     m_reload_delayed = !m_canvas->IsShown() && !refresh_immediately && !force_full_scene_refresh;
+
+    std::cout << "Canvas reload2" << std::endl;     //MJD
 
     PrinterTechnology printer_technology = current_printer_technology();
     int               volume_idx_wipe_tower_old = -1;
@@ -2321,6 +2346,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
     auto deleted_volumes_lower = [](const GLVolumeState &v1, const GLVolumeState &v2) { return v1.composite_id < v2.composite_id; };
     std::sort(deleted_volumes.begin(), deleted_volumes.end(), deleted_volumes_lower);
 
+    std::cout << "Canvas reload3" << std::endl;     //MJD
+
     if (m_reload_delayed)
         return;
 
@@ -2364,6 +2391,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
             }
         }
     }
+
+    std::cout << "Canvas reload4" << std::endl;     //MJD
 
     if (printer_technology == ptSLA) {
         size_t idx = 0;
@@ -2436,6 +2465,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         }
     }
 
+    std::cout << "Canvas reload5" << std::endl;     //MJD
+
     if (printer_technology == ptFFF && m_config->has("nozzle_diameter")) {
         // Should the wipe tower be visualized ?
         unsigned int extruders_count = (unsigned int)dynamic_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"))->values.size();
@@ -2476,6 +2507,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         }
     }
 
+    std::cout << "Canvas reload6" << std::endl;     //MJD
+
     update_volumes_colors_by_extruder();
     // Update selection indices based on the old/new GLVolumeCollection.
     if (m_selection.get_mode() == Selection::Instance)
@@ -2500,6 +2533,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         m_sla_view.update_volumes_visibility(m_volumes.volumes);
         update_object_list = true;
     }
+
+
 
     // @Enrico suggest this solution to preven accessing pointer on caster without data
     m_scene_raycaster.remove_raycasters(SceneRaycaster::EType::Volume);
@@ -2547,6 +2582,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         post_event(Event<bool>(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS, false));
     }
 
+    std::cout << "Canvas reload7" << std::endl;     //MJD
+
     refresh_camera_scene_box();
 
     if (m_selection.is_empty()) {
@@ -2587,6 +2624,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
 
     // and force this canvas to be redrawn.
     m_dirty = true;
+
+    std::cout << "Canvas reload complete" << std::endl;     //MJD
 }
 
 void GLCanvas3D::load_gcode_shells()

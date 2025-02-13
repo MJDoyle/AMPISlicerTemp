@@ -2,9 +2,12 @@
 #include "libslic3r/Print.hpp"
 #include "yaml-cpp/yaml.h"
 
+
 #include <fstream>
 #include <queue>
 #include <unordered_set>
+
+
 
 /*
     Generate a map of object names to object positions in both the model and the print
@@ -216,21 +219,23 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
 
     // std::cout << "NUM NEIGHBOURS: " << neighbours.size() << std::endl;
 
-    std::vector<AssemblyNode> assembly_path = breadth_first_assembly_search();
+    std::vector<AssemblyNode*> assembly_path = breadth_first_assembly_search();
+
+    m_assembly_path = assembly_path;
 
     std::cout << std::endl << "*** Assembly path ***" << std::endl << std::endl;
 
-    for (AssemblyNode path_node : assembly_path)
+    for (AssemblyNode* path_node : assembly_path)
     {
         std::cout << "Node: ";
-        path_node.PrintInfo();
+        path_node->PrintInfo();
     }
 
     std::vector<size_t> ordered_part_ids;
 
-    for (AssemblyNode path_node : assembly_path)
+    for (AssemblyNode* path_node : assembly_path)
     {
-        for (Slic3r::ModelObject* object_ptr : path_node.model.objects)
+        for (Slic3r::ModelObject* object_ptr : path_node->model->objects)
         {
             bool already_present = false;
 
@@ -339,25 +344,25 @@ void Assembl3r::generate_assembly_sequence(Slic3r::Print &print)
     fout.close();
 }
 
-std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
+std::vector<Assembl3r::AssemblyNode*> Assembl3r::breadth_first_assembly_search()
 {
-    std::vector<AssemblyNode> path;
+    std::vector<AssemblyNode*> path;
 
-    AssemblyNode target_node;
+    AssemblyNode* target_node;
 
-    AssemblyNode first_part_node;
+    AssemblyNode* first_part_node;
 
-    AssemblyNode base_node;
+    AssemblyNode* base_node = new AssemblyNode();
 
-    base_node.model = initial_model;
+    base_node->model = new Slic3r::Model(initial_model);
 
-    base_node.id  = node_id_generator(base_node.ObjectIDs());
+    base_node->id  = node_id_generator(base_node->ObjectIDs());
 
-    std::queue<AssemblyNode> queue;
+    std::queue<AssemblyNode*> queue;
 
-    std::set<AssemblyNode> visited_nodes;
+    std::set<AssemblyNode*> visited_nodes;
 
-    std::map<AssemblyNode, AssemblyNode> parents;
+    std::map<AssemblyNode*, AssemblyNode*> parents;
 
     //std::map<AssemblyNode, AssemblyNode> all_parents;
 
@@ -370,28 +375,27 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
 
     while (queue.size() > 0)
     {
-        AssemblyNode current_node = queue.front();
+        AssemblyNode* current_node = queue.front();
 
         queue.pop();
 
         std::cout << std::endl << "Current node: ";
-        current_node.PrintInfo();
+        current_node->PrintInfo();
 
         //Check if current node is target node (e.g. has no model objects)
-        if (current_node.model.objects.size() == 0)
+        if (current_node->model->objects.size() == 0)
         {
-            target_node = current_node;
-        
+            target_node = current_node;        
         }
 
-        std::vector<AssemblyNode> neighbours = find_node_neighbours(current_node);
+        std::vector<AssemblyNode*> neighbours = find_node_neighbours(current_node);
 
         std::cout << "Num neighbours: " << neighbours.size() << std::endl;
 
-        for (AssemblyNode neighbour : neighbours)
+        for (AssemblyNode* neighbour : neighbours)
         {
             std::cout << "Neighbour: ";
-            neighbour.PrintInfo();
+            neighbour->PrintInfo();
 
             if (visited_nodes.find(neighbour) != visited_nodes.end())
                 continue;
@@ -413,10 +417,10 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
             for (auto const& [child, parent] : parents)
             {
                 std::cout << "Child: ";
-                child.PrintInfo();
+                child->PrintInfo();
 
                 std::cout << "Parent: ";
-                parent.PrintInfo();
+                parent->PrintInfo();
             };
         }
     }
@@ -434,7 +438,7 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
     //Select the most suitable one (an internal part if one exists)
     for (auto const& [child, parent] : parents)
     {
-        if (child.model.objects.size() == 1 && child.model.objects[0]->volumes[0]->internal)
+        if (child->model->objects.size() == 1 && child->model->objects[0]->volumes[0]->internal)
         {
             internalStartFound = true;
             first_part_node = parents[child];
@@ -448,7 +452,7 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
     {
         for (auto const& [child, parent] : parents)
         {
-            if (child.model.objects.size() == 1)
+            if (child->model->objects.size() == 1)
             {
                 startFound = true;
                 first_part_node = parents[child];
@@ -465,14 +469,14 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
     for (auto const& [child, parent] : parents)
     {
         std::cout << "Child: ";
-        child.PrintInfo();
+        child->PrintInfo();
 
         std::cout << "Parent: ";
-        parent.PrintInfo();
+        parent->PrintInfo();
     };
 
 
-    AssemblyNode path_node = target_node;
+    AssemblyNode* path_node = target_node;
 
     path.push_back(path_node);
 
@@ -487,7 +491,7 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::breadth_first_assembly_search()
     while (parents.count(path_node))
     {
         std::cout << "Node: ";
-        path_node.PrintInfo();
+        path_node->PrintInfo();
 
         path_node = parents[path_node];
 
@@ -706,32 +710,34 @@ bool Assembl3r::meshes_intersect(Slic3r::TriangleMesh mesh_1, Slic3r::TriangleMe
     return false;
 }
 
-std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::AssemblyNode node)
+std::vector<Assembl3r::AssemblyNode*> Assembl3r::find_node_neighbours(Assembl3r::AssemblyNode* node)
 {
-    std::vector<Assembl3r::AssemblyNode> neighbours;
+    std::vector<Assembl3r::AssemblyNode*> neighbours;
 
     std::cout << "Finding neighbours" << std::endl;
 
     //Iterate through each object in the node's model
     //If the object can be removed (no collisions) then create a new node with the new model (minus one object from the original node)
     //and add this as a neighbour
-    for (auto model_object : node.model.objects)
+    for (auto model_object : node->model->objects)
     {
         std::cout << "Object to pick: " << model_object->mesh().center().x() << " " << model_object->mesh().center().y() << " " << model_object->mesh().center().z() << std::endl;
 
 
-        if (!collisions_on_z_move(node.model, model_object))
+        if (!collisions_on_z_move(node->model, model_object))
         {
             std::cout << "No collisions on move" << std::endl;
 
-            Assembl3r::AssemblyNode neighbour_node;
+            Assembl3r::AssemblyNode* neighbour_node = new (Assembl3r::AssemblyNode);
 
-            neighbour_node.model = node.model;
+            neighbour_node->model = new Slic3r::Model(*(node->model));
+
+            //neighbour_node.model = node.model;
 
             //Remove object
-            neighbour_node.model.remove_object(model_object->id());
+            neighbour_node->model->remove_object(model_object->id());
 
-            neighbour_node.id = node_id_generator(neighbour_node.ObjectIDs());
+            neighbour_node->id = node_id_generator(neighbour_node->ObjectIDs());
 
             neighbours.push_back(neighbour_node);
         }
@@ -743,7 +749,7 @@ std::vector<Assembl3r::AssemblyNode> Assembl3r::find_node_neighbours(Assembl3r::
     return neighbours;
 }
 
-bool Assembl3r::collisions_on_z_move(Slic3r::Model model, Slic3r::ModelObject* model_object)
+bool Assembl3r::collisions_on_z_move(Slic3r::Model* model, Slic3r::ModelObject* model_object)
 {
     //Step the model object up to some maximum height and check collisions against each of the other model parts
 
@@ -755,7 +761,7 @@ bool Assembl3r::collisions_on_z_move(Slic3r::Model model, Slic3r::ModelObject* m
 
         model_object->translate(0, 0, 1);
 
-        for (auto object_ptr : model.objects)
+        for (auto object_ptr : model->objects)
         {
             //Don't check intersects with self
             if (object_ptr->id().id == model_object->id().id)

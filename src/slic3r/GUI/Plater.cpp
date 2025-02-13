@@ -3577,6 +3577,9 @@ void Plater::priv::render_sliders(GLCanvas3D& canvas)
 {
     if (current_panel == preview)
         preview->render_sliders(canvas);
+
+    else if (current_panel == viewAssembly)       //MJD
+        viewAssembly->render_sliders(canvas);     //MJD
 }
 
 void Plater::priv::unbind_canvas_event_handlers()

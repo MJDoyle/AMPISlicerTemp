@@ -61,6 +61,8 @@ class ViewAssembly : public wxPanel
 
         void set_as_dirty();
 
+        void render_sliders(GLCanvas3D& canvas);
+
         void reload_scene(bool refresh_immediately, bool force_full_scene_refresh = false);
         void init_scene();
         void render();
@@ -69,6 +71,14 @@ class ViewAssembly : public wxPanel
     private:
 
         bool init(wxWindow* parent, Bed3D& bed, Model* model, DynamicPrintConfig* config, BackgroundSlicingProcess* process);
+
+        std::unique_ptr<DoubleSlider::DSForGcode>   m_assembly_slider { nullptr };
+
+        void create_sliders();
+
+        void update_assembly_slider();
+
+        void on_assembly_slider_scroll_changed();
 };
 
 //MJD END
